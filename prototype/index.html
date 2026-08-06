@@ -205,12 +205,15 @@
       roster depth, characterisation, the run structure &mdash; is deliberately absent.
     </p>
     <p>
-      The pacing skeleton is lifted from the original rather than guessed at. Waves are built by
-      spending a point budget from a weighted pool, with tougher heroes gated behind a wave number.
-      The next wave arrives on a 20-second timer <em>or</em> the moment you break the current one below
-      half health &mdash; so killing fast pulls the game forward and slow enemies never turn into dead
-      time. The wave before a banner never triggers early, which is what turns that gap into dread
-      instead of a lull. Hoarders take about 48 seconds to pay for themselves, the same as a Sunflower.
+      The pacing skeleton is taken from the original's decompiled source rather than guessed at.
+      Waves are built by spending a point budget from a weighted pool, with tougher heroes gated
+      behind a wave number. The next wave arrives on a 25&ndash;31 second timer <em>or</em> two seconds
+      after you break the current one &mdash; and the break threshold is re-rolled every wave between
+      50% and 65% remaining, so you can never quite predict it. The wave before a banner never
+      triggers early, which turns that gap into dread instead of a lull. Every hero rolls its own
+      walking speed across a &plusmn;23% band, so a wave spreads out on its own. Free income decays as
+      the run goes deeper, the way sky sun does over a level. Hoarders take about 48 seconds to pay
+      for themselves, the same as a Sunflower.
     </p>
     <ul>
       <li>
@@ -277,10 +280,9 @@
     },
     hoarder: {
       name: "Hoarder", cost: 50, hp: 90, tint: "#c9d45f",
-      // Sunflower's actual maths: 50 sun, 25 back every 24s, first at ~7s.
-      // That's a ~48s payback — mine was paying back in 16s, hence the runaway.
-      desc: "Drags 25 coins to the pile every 20s. Slow to pay off.",
-      warmup: 7,
+      // Sunflower.as: mLaunchRate 2500cs, first sun RandRangeInt(300, 1250) = 3-12.5s,
+      // then RandRangeInt(2350, 2500) = 23.5-25s. A ~48s payback, not the 16s I had.
+      desc: "Drags 25 coins to the pile every ~24s. Slow to pay off.",
     },
     barricade: {
       name: "Barricade", cost: 50, hp: 560, tint: "#3f8a4a",
@@ -334,8 +336,13 @@
     { type: "rogue",  pts: 3, weight: 30, from: 2 },
     { type: "knight", pts: 4, weight: 22, from: 3 },
   ];
-  const WAVE_TIMER = 20;      // seconds before the next wave comes regardless
-  const BREAK_AT = 0.5;       // …or immediately, once the wave is down to this much health
+  // Straight from Board.as. The threshold is rolled per wave between 50% and 65%
+  // remaining, so you must break 35-50% of a wave to pull the next one early — and
+  // you can never quite predict which. The randomness is the point.
+  const WAVE_TIMER_MIN = 25, WAVE_TIMER_MAX = 31;
+  const BREAK_MIN = 0.50, BREAK_MAX = 0.65;
+  const WAVE_MIN_AGE = 4;     // a wave must be this old before the health trigger applies
+  const TRIGGER_DELAY = 2;    // SPAWN_DELAY_AFTER_HEALTH_TRIGGER = 200 centiseconds
   const BANNER_EVERY = 5;     // every Nth wave is a big telegraphed one
 
   const CURSES = [
@@ -366,7 +373,11 @@
 
   // ---------------------------------------------------------------- economy
   function income() {
-    const floor = INCOME_FLOOR * (hasCurse("thin") ? 0.5 : 1);
+    // Sky sun gets slower the longer a level runs — min(950, 425 + sunsFallen*10),
+    // bottoming out around 45% of its opening rate. Free money drying up as the run
+    // goes deeper is what forces you onto built economy, so: same curve, per wave.
+    const decay = Math.max(0.45, 1 - S.wave * 0.055);
+    const floor = INCOME_FLOOR * decay * (hasCurse("thin") ? 0.5 : 1);
     return floor + Math.min(S.hoard, INCOME_CAP_AT) * INCOME_PER_COIN;
   }
   function spend(n) { S.hoard -= n; }
@@ -406,6 +417,8 @@
     S.phase = "fight";
     S.phaseT = 0;
     S.waveHp = 0;             // filled in as this wave's heroes actually spawn
+    S.breakAt = rnd(BREAK_MIN, BREAK_MAX);
+    S.waveTimer = rnd(WAVE_TIMER_MIN, WAVE_TIMER_MAX);
     if (isBanner(S.wave)) {
       const avail = CURSES.filter(c => !hasCurse(c.id));
       if (avail.length) S.curses.push(pick(avail));
@@ -426,6 +439,9 @@
     const hp = d.hp * (hasCurse("armour") ? 1.35 : 1);
     S.heroes.push({
       type, lane, x: W + 20, hp, maxHp: hp, wave: S.wave,
+      // PvZ rolls each zombie's speed individually across a ±23% band, which is why
+      // a wave spreads out on its own instead of marching in lockstep.
+      speed: d.speed * rnd(0.77, 1.23),
       carrying: 0, fleeing: false, burn: 0, burnT: 0, hitT: 0, bob: rnd(0, 6.28),
     });
     S.waveHp += hp;
@@ -451,9 +467,14 @@
       // mean dead time — and the wave before a banner never triggers early, which
       // is what makes the calm before it feel like dread rather than a lull.
       if (!S.queue.length) {
-        const spent = S.phaseT >= WAVE_TIMER;
-        const broken = waveHealthLeft() <= BREAK_AT && !isBanner(S.wave + 1);
-        if (spent || broken || !S.heroes.length) { S.phase = "breather"; S.phaseT = broken ? 2.5 : 5; }
+        const spent = S.phaseT >= S.waveTimer;
+        const broken = S.phaseT > WAVE_MIN_AGE
+          && waveHealthLeft() <= S.breakAt
+          && !isBanner(S.wave + 1);
+        if (spent || broken || !S.heroes.length) {
+          S.phase = "breather";
+          S.phaseT = broken ? TRIGGER_DELAY : 5;
+        }
       }
     }
 
@@ -482,7 +503,7 @@
       }
 
       if (g.type === "hoarder" && g.cd <= 0) {
-        g.cd = 20;
+        g.cd = rnd(23.5, 25);
         g.pop = 0.4;
         addCoins(25, p.x + 48, p.y + 40);
       }
@@ -526,8 +547,16 @@
         if (h.burnT <= 0) { h.burnT = 0.5; h.burn--; damageHero(h, 9, false); }
       }
 
+      // Zombies lose their helmet below 33% and bleed out (25hp/s, 75 for the big
+      // ones). Same here: a wounded hero may not make it to the exit with your coins.
+      if (!h.bleeding && h.hp / h.maxHp <= 0.33) {
+        h.bleeding = true;
+        S.puffs.push({ x: h.x, y: laneY(h.lane) + 26, t: 0, r: 26, kind: "steal" });
+      }
+      if (h.bleeding) h.hp -= (h.maxHp >= 300 ? 30 : 12) * dt;
+
       if (h.fleeing) {
-        h.x += d.speed * 2.1 * speedMul * dt;
+        h.x += h.speed * 2.1 * speedMul * dt;
         if (h.x > W + 30) h.hp = 0;   // escaped with the loot; coins are gone for good
         continue;
       }
@@ -549,7 +578,7 @@
         }
       }
 
-      h.x -= d.speed * speedMul * dt;
+      h.x -= h.speed * speedMul * dt;
 
       // Last resort: one bear trap per lane, and it only ever snaps once per run.
       if (h.x <= HOARD_X + 26 && S.traps[h.lane]) {
@@ -707,11 +736,18 @@
     cx.beginPath();
     cx.moveTo(-13, 26); cx.lineTo(-9, -8); cx.lineTo(9, -8); cx.lineTo(13, 26); cx.closePath(); cx.fill();
 
-    // helm
-    cx.beginPath(); cx.arc(0, -14, 12, Math.PI, 0); cx.fill();
-    cx.fillRect(-12, -14, 24, 9);
-    cx.fillStyle = "#0e0c11"; cx.fillRect(-9, -12, 18, 4);           // visor slit
-    if (h.type === "rogue") { cx.fillStyle = "#d1553f"; cx.fillRect(-9, -12, 18, 4); }
+    if (h.bleeding) {
+      // helm knocked clean off — bare, stunned head
+      cx.fillStyle = "#9a8f84";
+      cx.beginPath(); cx.arc(0, -13, 9, 0, 6.284); cx.fill();
+      cx.fillStyle = "#d1553f";
+      cx.fillRect(-7, -8, 14, 3);
+    } else {
+      cx.beginPath(); cx.arc(0, -14, 12, Math.PI, 0); cx.fill();
+      cx.fillRect(-12, -14, 24, 9);
+      cx.fillStyle = "#0e0c11"; cx.fillRect(-9, -12, 18, 4);         // visor slit
+      if (h.type === "rogue") { cx.fillStyle = "#d1553f"; cx.fillRect(-9, -12, 18, 4); }
+    }
 
     // legs
     cx.fillStyle = "#5a5560";
@@ -936,7 +972,8 @@
       const u = UNITS[S.selUnit];
       if (S.hoard >= u.cost) {
         spend(u.cost);
-        S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, cd: u.warmup || 0.6, items: [], pop: 0, recoil: 0, hurtT: 0 });
+        const warm = S.selUnit === "hoarder" ? rnd(3, 12.5) : 0.6;
+        S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, cd: warm, items: [], pop: 0, recoil: 0, hurtT: 0 });
         renderRack();
       }
     }
