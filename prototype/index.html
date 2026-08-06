@@ -1,0 +1,1003 @@
+<title>Hoard — core loop prototype</title>
+
+<style>
+  :root {
+    --cave:        #151318;
+    --cave-deep:   #0d0b10;
+    --stone:       #241f26;
+    --stone-lit:   #2f2833;
+    --goblin:      #6fbf5b;
+    --gold:        #e8c05a;
+    --gold-dim:    #8a7134;
+    --steel:       #c9ced8;
+    --alarm:       #d1553f;
+    --ink:         #e6dfd4;
+    --ink-dim:     #9a9089;
+    --display: Impact, Haettenschweiler, "Arial Narrow Bold", "Franklin Gothic Bold", sans-serif;
+    --body: "Trebuchet MS", "Segoe UI", Candara, sans-serif;
+    --data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  /* A game screen commits to one world: torchlit cave, no light theme. */
+  body {
+    margin: 0;
+    background:
+      radial-gradient(ellipse 900px 500px at 12% 20%, #221a24 0%, transparent 60%),
+      radial-gradient(ellipse 700px 400px at 88% 85%, #1c1a26 0%, transparent 60%),
+      var(--cave-deep);
+    color: var(--ink);
+    font-family: var(--body);
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+
+  .shell {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 28px 20px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* ---- masthead ---- */
+  .masthead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .wordmark {
+    font-family: var(--display);
+    font-size: clamp(34px, 7vw, 58px);
+    letter-spacing: 0.02em;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin: 0;
+    line-height: 0.95;
+    text-shadow: 0 2px 0 #4a3a12, 0 0 34px rgba(232,192,90,0.28);
+  }
+  .kicker {
+    font-family: var(--body);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-dim);
+  }
+
+  /* ---- hud ---- */
+  .hud {
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+    border: 1px solid #3b3340;
+    border-radius: 4px;
+    padding: 12px 16px;
+  }
+  .readout { display: flex; flex-direction: column; gap: 1px; }
+  .readout-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-dim);
+  }
+  .readout-value {
+    font-family: var(--display); font-size: 30px; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+  }
+  .readout-value.gold { color: var(--gold); }
+  .readout-sub { font-family: var(--data); font-size: 11px; color: var(--ink-dim); }
+  .mods { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; max-width: 380px; }
+  .mod-chip {
+    font-size: 11px; letter-spacing: 0.04em;
+    background: rgba(209,85,63,0.14);
+    border: 1px solid rgba(209,85,63,0.5);
+    color: #e88f79;
+    border-radius: 2px; padding: 3px 8px;
+  }
+  .mod-empty { font-size: 11px; color: var(--ink-dim); font-style: italic; }
+
+  /* ---- board ---- */
+  canvas {
+    display: block; width: 100%; max-width: 960px; height: auto;
+    aspect-ratio: 960 / 560;
+    border: 1px solid #3b3340; border-radius: 4px;
+    background: var(--cave);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  /* ---- shop ---- */
+  .rack { display: flex; gap: 10px; flex-wrap: wrap; }
+  .card {
+    flex: 1 1 150px; min-width: 130px;
+    display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+    background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+    border: 1px solid #3b3340; border-left: 3px solid var(--unit, var(--goblin));
+    border-radius: 3px; padding: 9px 11px;
+    color: var(--ink); font-family: var(--body); font-size: 13px;
+    text-align: left; cursor: pointer;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .card:hover:not(:disabled) { transform: translateY(-2px); background: var(--stone-lit); }
+  .card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .card[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+  .card:disabled { opacity: 0.4; cursor: not-allowed; }
+  .card-name { font-family: var(--display); font-size: 17px; letter-spacing: 0.03em; text-transform: uppercase; }
+  .card-cost { font-family: var(--data); font-size: 12px; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .card-desc { font-size: 11.5px; color: var(--ink-dim); line-height: 1.35; }
+
+  /* ---- satchel ---- */
+  .satchel {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border: 1px dashed #443b49; border-radius: 3px; padding: 9px 12px;
+  }
+  .satchel-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-dim); }
+  .slot {
+    font-size: 20px; line-height: 1;
+    background: var(--stone); border: 1px solid #3b3340; border-radius: 3px;
+    padding: 6px 9px; cursor: pointer; color: var(--ink);
+    transition: transform .12s ease;
+  }
+  .slot:hover { transform: translateY(-2px); }
+  .slot:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .slot[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+  .satchel-hint { font-size: 12px; color: var(--ink-dim); font-style: italic; }
+
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--body); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+    background: transparent; color: var(--ink-dim);
+    border: 1px solid #443b49; border-radius: 3px; padding: 6px 14px; cursor: pointer;
+  }
+  .btn:hover { color: var(--ink); border-color: var(--gold-dim); }
+  .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  /* ---- notes ---- */
+  .notes { border-top: 1px solid #2b2530; padding-top: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .notes h2 {
+    font-family: var(--display); font-size: 15px; text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--gold); margin: 0; font-weight: normal;
+  }
+  .notes p { margin: 0; max-width: 66ch; font-size: 14px; color: #cfc7bd; }
+  .notes ul { margin: 0; padding-left: 18px; max-width: 66ch; display: flex; flex-direction: column; gap: 7px; }
+  .notes li { font-size: 14px; color: #cfc7bd; }
+  .notes strong { color: var(--ink); }
+  .q { color: var(--gold); font-style: italic; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <h1 class="wordmark">Hoard</h1>
+    <span class="kicker">core loop prototype &middot; v0.1</span>
+  </header>
+
+  <div class="hud">
+    <div class="readout">
+      <span class="readout-label">The Hoard</span>
+      <span class="readout-value gold" id="hud-hoard">0</span>
+      <span class="readout-sub" id="hud-income">+0.0 / sec</span>
+    </div>
+    <div class="readout">
+      <span class="readout-label">Wave</span>
+      <span class="readout-value" id="hud-wave">0</span>
+      <span class="readout-sub" id="hud-status">&nbsp;</span>
+    </div>
+    <div class="mods" id="hud-mods"><span class="mod-empty">no curses yet</span></div>
+  </div>
+
+  <canvas id="board" width="960" height="560" aria-label="Game board: five lanes, goblins defend the hoard on the left from heroes marching in from the right"></canvas>
+
+  <div class="rack" id="rack"></div>
+
+  <div class="satchel">
+    <span class="satchel-label">Satchel</span>
+    <div id="slots" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+    <span class="satchel-hint" id="satchel-hint">Junk drops on the floor when heroes die. Click it to pick it up, then click a goblin to bolt it on.</span>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="restart" type="button">Restart run</button>
+    <button class="btn" id="pause" type="button">Pause</button>
+    <span class="satchel-hint">Right-click or Esc cancels a selection.</span>
+  </div>
+
+  <section class="notes">
+    <h2>What this prototype is testing</h2>
+    <p>
+      Four ideas, stripped of art and story so the loop can be judged on its own. Everything else &mdash;
+      roster depth, characterisation, the run structure &mdash; is deliberately absent.
+    </p>
+    <ul>
+      <li>
+        <strong>The hoard is one number doing three jobs.</strong> It is your currency, your income rate,
+        and your lose condition at the same time. Every goblin you place is taken off the pile you are
+        defending, and a smaller pile earns slower. <span class="q">Does spending feel tense or just punishing?</span>
+      </li>
+      <li>
+        <strong>Heroes rob you, they don't kill you.</strong> Anything that reaches the pile loads up its
+        pack and turns for the exit. Kill it on the way out and the coins fly home; let it reach the edge
+        and they are gone for good. Rogues are the sharp version &mdash; they ignore your line entirely and
+        walk straight through it, so walls do nothing and only damage stops them. Each lane has one
+        bear trap as a last resort &mdash; it snaps once per run and then it is gone.
+        <span class="q">Does the chase create good panic or bad frustration?</span>
+      </li>
+      <li>
+        <strong>Junk fuses onto goblins.</strong> Bolt a torch onto a Chucker and you get a Firechucker.
+        Add bees and you get something else again, with a new name and a new silhouette. Two items per
+        goblin. <span class="q">Does finding a combination feel like discovery?</span>
+      </li>
+      <li>
+        <strong>Curses stack with depth.</strong> Every third wave the cave itself gets worse, permanently,
+        for the rest of the run. <span class="q">Does escalating the environment beat just adding more enemies?</span>
+      </li>
+    </ul>
+  </section>
+
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------- constants
+  const W = 960, H = 560;
+  const COLS = 9, ROWS = 5, CELL = 96;
+  const OX = 96, OY = 64;                 // playfield origin; x < OX is the hoard zone
+  const HOARD_X = OX;                     // heroes that cross this are at the pile
+
+  const START_HOARD = 175;
+  const INCOME_FLOOR = 3.5;               // coins/sec that never goes away (anti death-spiral)
+  const INCOME_PER_COIN = 0.010;          // the pile pays interest on itself…
+  const INCOME_CAP_AT = 450;              // …but saturates, or the economy compounds away
+  const LOOT_RATE = 12;                   // coins/sec a hero shovels into its pack at the pile
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = arr => arr[(Math.random() * arr.length) | 0];
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+  // ---------------------------------------------------------------- content
+  const ITEMS = {
+    bucket: { emoji: "⛑️", name: "Dented Helm", blurb: "+160 hp" },
+    spring: { emoji: "\u{1F300}", name: "Rusty Spring",  blurb: "1.6x rate" },
+    bees:   { emoji: "\u{1F41D}", name: "Jar of Bees",   blurb: "swarm" },
+    torch:  { emoji: "\u{1F525}", name: "Guttering Torch", blurb: "burn" },
+  };
+  const ITEM_KEYS = Object.keys(ITEMS);
+
+  const UNITS = {
+    chucker: {
+      name: "Chucker", cost: 50, hp: 110, tint: "#6fbf5b",
+      desc: "Throws rocks down the lane. Your damage.",
+    },
+    hoarder: {
+      name: "Hoarder", cost: 50, hp: 90, tint: "#c9d45f",
+      desc: "Drags 25 coins to the pile every 8s. Fragile.",
+    },
+    barricade: {
+      name: "Barricade", cost: 50, hp: 560, tint: "#3f8a4a",
+      desc: "Doesn't fight. Just refuses to move.",
+    },
+    bomber: {
+      name: "Bomber", cost: 125, hp: 70, tint: "#c96f4a",
+      desc: "Detonates when a hero gets close. One use.",
+    },
+  };
+
+  // Fusion names — the whole point is that a combination reads as a *new thing*.
+  const FUSIONS = {
+    "chucker|bucket": "Tinhead", "chucker|spring": "Windup Chucker",
+    "chucker|bees": "Hivechucker", "chucker|torch": "Firechucker",
+    "chucker|bees+bucket": "Hivehead", "chucker|bucket+spring": "Jack-in-the-Helm",
+    "chucker|bucket+torch": "Furnace", "chucker|bees+spring": "Beegatling",
+    "chucker|spring+torch": "Comet Chucker", "chucker|bees+torch": "Wrath of the Doorknob",
+    "hoarder|bucket": "Vault", "hoarder|spring": "Fastfingers",
+    "hoarder|bees": "Beekeeper", "hoarder|torch": "Coinsmelter",
+    "hoarder|bucket+spring": "Armoured Fastfingers", "hoarder|bees+bucket": "Apiarist",
+    "hoarder|bucket+torch": "Smelter Vault", "hoarder|bees+spring": "Honey Rush",
+    "hoarder|spring+torch": "Hot Hands", "hoarder|bees+torch": "Smoked Out",
+    "barricade|bucket": "Bulwark", "barricade|spring": "Springboard",
+    "barricade|bees": "Hive Wall", "barricade|torch": "Brazier",
+    "barricade|bucket+spring": "Siege Door", "barricade|bees+bucket": "Buzzing Bulwark",
+    "barricade|bucket+torch": "Forge Wall", "barricade|bees+spring": "Trampoline Hive",
+    "barricade|spring+torch": "Kickback Brazier", "barricade|bees+torch": "Smokehouse",
+    "bomber|bucket": "Heavy Ordnance", "bomber|spring": "Hair Trigger",
+    "bomber|bees": "Shrapnel Hive", "bomber|torch": "Wildfire",
+  };
+  const fusionName = g => {
+    if (!g.items.length) return UNITS[g.type].name;
+    const key = g.type + "|" + [...g.items].sort().join("+");
+    if (FUSIONS[key]) return FUSIONS[key];
+    return ITEMS[g.items[0]].name.split(" ")[0] + " " + UNITS[g.type].name;
+  };
+
+  const HEROES = {
+    // `pack` is how much a hero can carry before it turns and runs for the exit.
+    squire: { name: "Squire", hp: 105, speed: 30, dps: 22, drop: 0.10, pack: 80 },
+    knight: { name: "Knight", hp: 340, speed: 26, dps: 28, drop: 0.26, pack: 190 },
+    rogue:  { name: "Rogue",  hp: 62,  speed: 64, dps: 0,  drop: 0.34, pack: 60 },
+  };
+
+  const CURSES = [
+    { id: "torchlit", name: "Torchlit Halls",  blurb: "heroes +20% speed" },
+    { id: "damp",     name: "Damp Cavern",     blurb: "goblins -15% rate" },
+    { id: "word",     name: "Word Has Spread", blurb: "rogues steal double" },
+    { id: "armour",   name: "Heavy Armour",    blurb: "heroes +35% hp" },
+    { id: "thin",     name: "Thin Pickings",   blurb: "base income halved" },
+  ];
+
+  // ---------------------------------------------------------------- state
+  let S;
+  function newRun() {
+    S = {
+      hoard: START_HOARD, wave: 0, phase: "breather", phaseT: 4,
+      goblins: [], heroes: [], shots: [], junk: [], puffs: [], coins: [],
+      traps: [true, true, true, true, true],   // one-shot per lane, like a lawnmower
+      satchel: [], curses: [], queue: [],
+      selUnit: null, selItem: null,
+      over: false, paused: false, seenDrop: false, t: 0,
+    };
+  }
+  newRun();
+
+  const hasCurse = id => S.curses.some(c => c.id === id);
+  const cellOf = g => ({ x: OX + g.col * CELL, y: OY + g.row * CELL });
+  const goblinAt = (col, row) => S.goblins.find(g => g.col === col && g.row === row && g.hp > 0);
+
+  // ---------------------------------------------------------------- economy
+  function income() {
+    const floor = INCOME_FLOOR * (hasCurse("thin") ? 0.5 : 1);
+    return floor + Math.min(S.hoard, INCOME_CAP_AT) * INCOME_PER_COIN;
+  }
+  function spend(n) { S.hoard -= n; }
+  function addCoins(n, fromX, fromY) {
+    S.hoard += n;
+    if (fromX !== undefined) S.coins.push({ x: fromX, y: fromY, t: 0, n });
+  }
+
+  // ---------------------------------------------------------------- waves
+  function buildWave(n) {
+    const q = [];
+    let t = 0;
+    const squires = 2 + Math.floor(n * 1.4);
+    const knights = n < 2 ? 0 : Math.floor(n * 0.7);
+    const rogues  = n < 2 ? 0 : Math.floor(n * 0.8);   // walls can't answer these; they keep a solved board honest
+    const gap = Math.max(0.35, 1.6 - n * 0.09);   // waves tighten as the run goes deeper
+    const push = (type, count) => {
+      for (let i = 0; i < count; i++) {
+        t += rnd(gap * 0.6, gap * 1.6);
+        q.push({ type, lane: (Math.random() * ROWS) | 0, at: t });
+      }
+    };
+    push("squire", squires);
+    push("knight", knights);
+    push("rogue", rogues);
+    q.sort((a, b) => a.at - b.at);
+    return q;
+  }
+
+  function startWave() {
+    S.wave++;
+    S.queue = buildWave(S.wave);
+    S.phase = "fight";
+    S.phaseT = 0;
+    if (S.wave % 3 === 0) {
+      const avail = CURSES.filter(c => !hasCurse(c.id));
+      if (avail.length) S.curses.push(pick(avail));
+      renderMods();
+    }
+  }
+
+  function spawnHero(type, lane) {
+    const d = HEROES[type];
+    const hp = d.hp * (hasCurse("armour") ? 1.35 : 1);
+    S.heroes.push({
+      type, lane, x: W + 20, hp, maxHp: hp,
+      carrying: 0, fleeing: false, burn: 0, burnT: 0, hitT: 0, bob: rnd(0, 6.28),
+    });
+  }
+
+  // ---------------------------------------------------------------- update
+  function update(dt) {
+    S.t += dt;
+    S.hoard += income() * dt;
+
+    // --- wave pacing
+    if (S.phase === "breather") {
+      S.phaseT -= dt;
+      if (S.phaseT <= 0) startWave();
+    } else {
+      S.phaseT += dt;
+      while (S.queue.length && S.queue[0].at <= S.phaseT) {
+        const e = S.queue.shift();
+        spawnHero(e.type, e.lane);
+      }
+      // don't wait on one slow knight — waves overlap, so the pressure never fully drops
+      if (!S.queue.length && S.heroes.length <= 1) { S.phase = "breather"; S.phaseT = 6; }
+    }
+
+    // --- goblins
+    for (const g of S.goblins) {
+      if (g.hp <= 0) continue;
+      const p = cellOf(g);
+      const rate = (g.items.includes("spring") ? 1.6 : 1) * (hasCurse("damp") ? 0.85 : 1);
+      g.cd -= dt * rate;
+
+      if (g.type === "chucker" && g.cd <= 0) {
+        const target = S.heroes.find(h => h.lane === g.row && h.x > p.x - 10 && h.hp > 0);
+        if (target) {
+          g.cd = 1.4;
+          g.recoil = 0.18;
+          const shots = g.items.includes("bees") ? 3 : 1;
+          for (let i = 0; i < shots; i++) {
+            S.shots.push({
+              x: p.x + 58, y: p.y + 48 + (shots > 1 ? (i - 1) * 16 : 0),
+              vy: shots > 1 ? (i - 1) * 26 : 0,
+              lane: g.row, dmg: 21, fire: g.items.includes("torch"),
+              bee: g.items.includes("bees"),
+            });
+          }
+        } else g.cd = Math.min(g.cd, 0.05);
+      }
+
+      if (g.type === "hoarder" && g.cd <= 0) {
+        g.cd = 8;
+        g.pop = 0.4;
+        addCoins(25, p.x + 48, p.y + 40);
+      }
+
+      if (g.type === "bomber") {
+        const near = S.heroes.find(h => h.lane === g.row && h.hp > 0 && h.x < p.x + 150 && h.x > p.x - 60);
+        if (near) {
+          for (const h of S.heroes) {
+            if (h.lane === g.row && Math.abs(h.x - p.x) < 170) damageHero(h, 240, g.items.includes("torch"));
+          }
+          S.puffs.push({ x: p.x + 48, y: p.y + 48, t: 0, r: 170, kind: "boom" });
+          g.hp = 0;
+        }
+      }
+
+      if (g.pop > 0) g.pop -= dt;
+      if (g.recoil > 0) g.recoil -= dt;
+    }
+    S.goblins = S.goblins.filter(g => g.hp > 0);
+
+    // --- projectiles
+    for (const s of S.shots) {
+      s.x += 300 * dt;
+      s.y += s.vy * dt;
+      const hit = S.heroes.find(h => h.lane === s.lane && h.hp > 0 && Math.abs(h.x - s.x) < 22);
+      if (hit) { damageHero(hit, s.dmg, s.fire); s.dead = true; }
+      if (s.x > W + 20) s.dead = true;
+    }
+    S.shots = S.shots.filter(s => !s.dead);
+
+    // --- heroes
+    const speedMul = hasCurse("torchlit") ? 1.2 : 1;
+    for (const h of S.heroes) {
+      if (h.hp <= 0) continue;
+      const d = HEROES[h.type];
+      h.bob += dt * 6;
+      if (h.hitT > 0) h.hitT -= dt;
+
+      if (h.burn > 0) {
+        h.burnT -= dt;
+        if (h.burnT <= 0) { h.burnT = 0.5; h.burn--; damageHero(h, 9, false); }
+      }
+
+      if (h.fleeing) {
+        h.x += d.speed * 2.1 * speedMul * dt;
+        if (h.x > W + 30) h.hp = 0;   // escaped with the loot; coins are gone for good
+        continue;
+      }
+
+      // Rogues ignore the line entirely — walls do nothing, only damage stops them.
+      if (h.type !== "rogue") {
+        const col = Math.floor((h.x - OX) / CELL);
+        const blocker = col >= 0 && col < COLS ? goblinAt(col, h.lane) : null;
+        if (blocker) {
+          const gp = cellOf(blocker);
+          blocker.hp -= d.dps * dt;
+          blocker.hurtT = 0.12;
+          if (blocker.items.includes("torch")) damageHero(h, 16 * dt, false);
+          if (blocker.items.includes("spring") && Math.random() < dt * 1.4) {
+            h.x += 34; S.puffs.push({ x: h.x, y: laneY(h.lane) + 40, t: 0, r: 34, kind: "boing" });
+          }
+          if (blocker.hp <= 0) S.puffs.push({ x: gp.x + 48, y: gp.y + 48, t: 0, r: 46, kind: "poof" });
+          continue;
+        }
+      }
+
+      h.x -= d.speed * speedMul * dt;
+
+      // Last resort: one bear trap per lane, and it only ever snaps once per run.
+      if (h.x <= HOARD_X + 26 && S.traps[h.lane]) {
+        S.traps[h.lane] = false;
+        for (const v of S.heroes) {
+          if (v.lane !== h.lane || v.hp <= 0) continue;
+          if (v.carrying > 0) {
+            addCoins(v.carrying, v.x, laneY(v.lane) + 48);
+            v.carrying = 0;
+          }
+          v.hp = 0;
+        }
+        S.puffs.push({ x: OX + 40, y: laneY(h.lane) + 48, t: 0, r: 200, kind: "boom" });
+        continue;
+      }
+
+      // At the pile every hero loots, then turns and runs. Kill it before it reaches
+      // the exit and the coins come home; let it go and they are gone for good.
+      if (h.x <= HOARD_X) {
+        h.x = HOARD_X;
+        const cap = d.pack * (hasCurse("word") && h.type === "rogue" ? 2 : 1);
+        const grab = h.type === "rogue"
+          ? cap                                  // rogues snatch and bolt in one motion
+          : Math.min(LOOT_RATE * dt, cap - h.carrying);
+        const take = Math.min(S.hoard, grab);
+        S.hoard -= take;
+        h.carrying += take;
+        if (Math.random() < dt * 6) {
+          S.puffs.push({ x: HOARD_X, y: laneY(h.lane) + 48, t: 0, r: 30, kind: "steal" });
+        }
+        if (h.carrying >= cap - 0.01 || S.hoard <= 0) h.fleeing = true;
+      }
+    }
+
+    // --- deaths & drops
+    for (const h of S.heroes) {
+      if (h.hp > 0 || h.done) continue;
+      h.done = true;
+      if (h.carrying > 0 && h.x <= W + 20) addCoins(h.carrying, h.x, laneY(h.lane) + 48);
+      const guaranteed = !S.seenDrop && S.wave >= 2;
+      if (Math.random() < HEROES[h.type].drop || guaranteed) {
+        S.seenDrop = true;
+        S.junk.push({ x: clamp(h.x, OX + 20, W - 30), y: laneY(h.lane) + 62, key: pick(ITEM_KEYS), life: 10, bob: rnd(0, 6.28) });
+      }
+      S.puffs.push({ x: h.x, y: laneY(h.lane) + 48, t: 0, r: 40, kind: "poof" });
+    }
+    S.heroes = S.heroes.filter(h => h.hp > 0);
+
+    // --- floor junk
+    for (const j of S.junk) { j.life -= dt; j.bob += dt * 3; }
+    S.junk = S.junk.filter(j => j.life > 0);
+
+    for (const p of S.puffs) p.t += dt;
+    S.puffs = S.puffs.filter(p => p.t < 0.5);
+    for (const c of S.coins) c.t += dt;
+    S.coins = S.coins.filter(c => c.t < 0.7);
+
+    if (S.hoard <= 0) { S.hoard = 0; S.over = true; }
+  }
+
+  function damageHero(h, dmg, fire) {
+    h.hp -= dmg;
+    h.hitT = 0.1;
+    if (fire) h.burn = Math.max(h.burn, 6);
+  }
+  const laneY = lane => OY + lane * CELL;
+
+  // ---------------------------------------------------------------- drawing
+  const cv = document.getElementById("board");
+  const cx = cv.getContext("2d");
+
+  function drawGoblin(g) {
+    const p = cellOf(g);
+    const cxp = p.x + 48, cyp = p.y + 56;
+    const u = UNITS[g.type];
+    const squash = g.pop > 0 ? 1 + g.pop * 0.3 : 1;
+    const lean = g.recoil > 0 ? -g.recoil * 40 : 0;
+    const big = g.type === "barricade";
+    const rw = (big ? 34 : 26) * squash, rh = (big ? 36 : 28) * squash;
+
+    cx.save();
+    cx.translate(cxp + lean, cyp);
+
+    if (g.hurtT > 0) { cx.globalAlpha = 0.75; g.hurtT -= 0.016; }
+
+    // ears
+    cx.fillStyle = u.tint;
+    cx.beginPath();
+    cx.moveTo(-rw + 3, -6); cx.lineTo(-rw - 15, -20); cx.lineTo(-rw - 2, 4); cx.closePath(); cx.fill();
+    cx.beginPath();
+    cx.moveTo(rw - 3, -6); cx.lineTo(rw + 15, -20); cx.lineTo(rw + 2, 4); cx.closePath(); cx.fill();
+
+    // body
+    cx.beginPath(); cx.ellipse(0, 0, rw, rh, 0, 0, 6.284); cx.fill();
+    cx.fillStyle = "rgba(0,0,0,0.22)";
+    cx.beginPath(); cx.ellipse(0, rh * 0.45, rw * 0.92, rh * 0.4, 0, 0, 6.284); cx.fill();
+
+    // eyes
+    const ey = -rh * 0.22;
+    cx.fillStyle = "#fdfbf4";
+    cx.beginPath(); cx.ellipse(-9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
+    cx.beginPath(); cx.ellipse(9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
+    cx.fillStyle = "#14110f";
+    const look = g.type === "hoarder" ? -2 : 2;
+    cx.beginPath(); cx.arc(-9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
+    cx.beginPath(); cx.arc(9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
+
+    // grin
+    cx.strokeStyle = "#14110f"; cx.lineWidth = 2; cx.lineCap = "round";
+    cx.beginPath(); cx.arc(0, rh * 0.12, 9, 0.25, Math.PI - 0.25); cx.stroke();
+    cx.fillStyle = "#fdfbf4";
+    cx.fillRect(-5, rh * 0.12 + 5, 3.5, 4);
+    cx.fillRect(2, rh * 0.12 + 5, 3.5, 4);
+
+    cx.restore();
+
+    // bolted-on junk
+    g.items.forEach((k, i) => {
+      cx.font = "20px serif";
+      cx.textAlign = "center";
+      cx.fillText(ITEMS[k].emoji, cxp + (g.items.length > 1 ? (i === 0 ? -17 : 17) : 0), p.y + 26);
+    });
+
+    // hp bar
+    const maxHp = u.hp + (g.items.includes("bucket") ? 160 : 0);
+    if (g.hp < maxHp) {
+      const w = 54, f = clamp(g.hp / maxHp, 0, 1);
+      cx.fillStyle = "rgba(0,0,0,0.55)"; cx.fillRect(cxp - w / 2, p.y + 84, w, 5);
+      cx.fillStyle = f > 0.4 ? "#6fbf5b" : "#d1553f"; cx.fillRect(cxp - w / 2, p.y + 84, w * f, 5);
+    }
+
+    // fused units announce themselves
+    if (g.items.length) {
+      cx.font = "10px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = "#e8c05a"; cx.textAlign = "center";
+      cx.fillText(fusionName(g), cxp, p.y + 100);
+    }
+  }
+
+  function drawHero(h) {
+    const y = laneY(h.lane) + 54;
+    const d = HEROES[h.type];
+    const bob = Math.sin(h.bob) * 2;
+    const steel = h.type === "rogue" ? "#6d6475" : h.type === "knight" ? "#aab2c0" : "#c9ced8";
+    const scale = h.type === "knight" ? 1.22 : h.type === "rogue" ? 0.92 : 1;
+
+    cx.save();
+    cx.translate(h.x, y + bob);
+    cx.scale(h.fleeing ? -scale : scale, scale);
+
+    if (h.hitT > 0) cx.globalAlpha = 0.6;
+
+    // cape / body
+    cx.fillStyle = steel;
+    cx.beginPath();
+    cx.moveTo(-13, 26); cx.lineTo(-9, -8); cx.lineTo(9, -8); cx.lineTo(13, 26); cx.closePath(); cx.fill();
+
+    // helm
+    cx.beginPath(); cx.arc(0, -14, 12, Math.PI, 0); cx.fill();
+    cx.fillRect(-12, -14, 24, 9);
+    cx.fillStyle = "#0e0c11"; cx.fillRect(-9, -12, 18, 4);           // visor slit
+    if (h.type === "rogue") { cx.fillStyle = "#d1553f"; cx.fillRect(-9, -12, 18, 4); }
+
+    // legs
+    cx.fillStyle = "#5a5560";
+    cx.fillRect(-9, 26, 6, 8 + Math.sin(h.bob) * 2);
+    cx.fillRect(3, 26, 6, 8 - Math.sin(h.bob) * 2);
+
+    if (h.type === "knight") {   // shield
+      cx.fillStyle = "#8c94a4";
+      cx.beginPath(); cx.moveTo(-20, -6); cx.lineTo(-8, -6); cx.lineTo(-8, 18); cx.lineTo(-14, 24); cx.lineTo(-20, 18); cx.closePath(); cx.fill();
+    }
+    cx.restore();
+
+    if (h.burn > 0) {
+      cx.font = "15px serif"; cx.textAlign = "center";
+      cx.fillText("\u{1F525}", h.x, y - 34 + Math.sin(S.t * 14) * 2);
+    }
+    if (h.carrying > 0) {
+      cx.font = "bold 13px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = "#e8c05a"; cx.textAlign = "center";
+      cx.fillText("+" + Math.round(h.carrying) + " \u{1F4B0}", h.x, y - 40);
+    }
+
+    const f = clamp(h.hp / h.maxHp, 0, 1);
+    if (f < 1) {
+      cx.fillStyle = "rgba(0,0,0,0.55)"; cx.fillRect(h.x - 20, y + 40, 40, 4);
+      cx.fillStyle = "#d1553f"; cx.fillRect(h.x - 20, y + 40, 40 * f, 4);
+    }
+  }
+
+  function drawHoard() {
+    const pile = clamp(S.hoard / 900, 0.08, 1);
+    const baseY = H - 26;
+    const grd = cx.createRadialGradient(48, baseY - 40, 4, 48, baseY - 40, 190);
+    grd.addColorStop(0, "rgba(232,192,90," + (0.16 + pile * 0.2) + ")");
+    grd.addColorStop(1, "transparent");
+    cx.fillStyle = grd;
+    cx.fillRect(0, 0, 260, H);
+
+    cx.fillStyle = "#1b1720";
+    cx.fillRect(0, OY, OX, ROWS * CELL);
+
+    // the pile itself grows and shrinks with the number
+    const h = 30 + pile * 300;
+    cx.fillStyle = "#8a7134";
+    cx.beginPath();
+    cx.moveTo(-10, baseY);
+    cx.quadraticCurveTo(OX * 0.5, baseY - h, OX + 14, baseY);
+    cx.closePath(); cx.fill();
+
+    cx.fillStyle = "#e8c05a";
+    for (let i = 0; i < 26; i++) {
+      const a = (i * 2.399) % 1, b = (i * 4.771) % 1;
+      const cxp = 6 + a * (OX - 6);
+      const cyp = baseY - b * h * (1 - Math.abs(cxp / OX - 0.5)) * 0.9;
+      cx.beginPath(); cx.ellipse(cxp, cyp, 6, 3.4, 0.3, 0, 6.284); cx.fill();
+    }
+    cx.fillStyle = "rgba(255,240,200,0.9)";
+    cx.beginPath(); cx.ellipse(30, baseY - h * 0.5, 3, 1.6, 0.3, 0, 6.284); cx.fill();
+
+    cx.font = "11px 'Trebuchet MS', sans-serif";
+    cx.fillStyle = "#8a7134"; cx.textAlign = "center";
+    cx.fillText("THE HOARD", OX / 2, OY - 16);
+  }
+
+  function render() {
+    cx.clearRect(0, 0, W, H);
+    cx.fillStyle = "#151318"; cx.fillRect(0, 0, W, H);
+
+    // lanes
+    for (let r = 0; r < ROWS; r++) {
+      cx.fillStyle = r % 2 ? "#241f26" : "#2a2430";
+      cx.fillRect(OX, OY + r * CELL, COLS * CELL, CELL);
+    }
+    cx.strokeStyle = "rgba(0,0,0,0.35)"; cx.lineWidth = 1;
+    for (let c = 0; c <= COLS; c++) {
+      cx.beginPath(); cx.moveTo(OX + c * CELL, OY); cx.lineTo(OX + c * CELL, OY + ROWS * CELL); cx.stroke();
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      cx.beginPath(); cx.moveTo(OX, OY + r * CELL); cx.lineTo(OX + COLS * CELL, OY + r * CELL); cx.stroke();
+    }
+
+    // placement ghost
+    if (S.selUnit && hover.col >= 0) {
+      const ok = !goblinAt(hover.col, hover.row) && S.hoard >= UNITS[S.selUnit].cost;
+      cx.fillStyle = ok ? "rgba(111,191,91,0.2)" : "rgba(209,85,63,0.2)";
+      cx.fillRect(OX + hover.col * CELL, OY + hover.row * CELL, CELL, CELL);
+    }
+
+    drawHoard();
+
+    // one-shot bear traps, drawn rather than emoji so they render everywhere
+    for (let r = 0; r < ROWS; r++) {
+      const y = laneY(r) + 62;
+      cx.globalAlpha = S.traps[r] ? 1 : 0.14;
+      cx.strokeStyle = "#8f8698"; cx.lineWidth = 2.5;
+      cx.beginPath(); cx.arc(OX + 22, y, 13, Math.PI, 0); cx.stroke();     // jaw
+      cx.beginPath();
+      for (let i = 0; i <= 5; i++) {                                       // teeth
+        const tx = OX + 22 - 13 + i * 5.2;
+        cx.moveTo(tx, y - 1); cx.lineTo(tx + 2.6, y - 8); cx.lineTo(tx + 5.2, y - 1);
+      }
+      cx.stroke();
+      cx.fillStyle = "#5b5464";
+      cx.beginPath(); cx.ellipse(OX + 22, y + 2, 15, 4, 0, 0, 6.284); cx.fill();
+      cx.globalAlpha = 1;
+    }
+
+    S.goblins.forEach(drawGoblin);
+
+    for (const s of S.shots) {
+      cx.fillStyle = s.bee ? "#e8c05a" : s.fire ? "#e08040" : "#a89b8c";
+      cx.beginPath(); cx.arc(s.x, s.y, s.fire ? 7 : 5.5, 0, 6.284); cx.fill();
+      if (s.fire) { cx.fillStyle = "rgba(224,128,64,0.3)"; cx.beginPath(); cx.arc(s.x - 8, s.y, 8, 0, 6.284); cx.fill(); }
+    }
+
+    S.heroes.forEach(drawHero);
+
+    // floor junk, pulsing as it runs out
+    for (const j of S.junk) {
+      const fade = j.life < 3 ? 0.4 + Math.abs(Math.sin(j.life * 6)) * 0.6 : 1;
+      cx.globalAlpha = fade;
+      cx.fillStyle = "rgba(232,192,90,0.16)";
+      cx.beginPath(); cx.arc(j.x, j.y, 20, 0, 6.284); cx.fill();
+      cx.font = "24px serif"; cx.textAlign = "center";
+      cx.fillText(ITEMS[j.key].emoji, j.x, j.y + Math.sin(j.bob) * 3 + 8);
+      cx.globalAlpha = 1;
+    }
+
+    for (const p of S.puffs) {
+      const a = 1 - p.t / 0.5;
+      cx.globalAlpha = a;
+      cx.strokeStyle = p.kind === "boom" ? "#e08040" : p.kind === "steal" ? "#d1553f" : "#6a6070";
+      cx.lineWidth = 3;
+      cx.beginPath(); cx.arc(p.x, p.y, p.r * (1 - a) + 8, 0, 6.284); cx.stroke();
+      cx.globalAlpha = 1;
+    }
+
+    for (const c of S.coins) {
+      cx.globalAlpha = 1 - c.t / 0.7;
+      cx.font = "bold 14px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = "#e8c05a"; cx.textAlign = "center";
+      cx.fillText("+" + Math.round(c.n), c.x, c.y - c.t * 46);
+      cx.globalAlpha = 1;
+    }
+
+    // banners
+    cx.textAlign = "center";
+    if (S.phase === "breather" && !S.over) {
+      cx.font = "34px Impact, sans-serif";
+      cx.fillStyle = "rgba(232,192,90," + (0.55 + Math.sin(S.t * 4) * 0.25) + ")";
+      cx.fillText("WAVE " + (S.wave + 1) + " APPROACHING", W / 2, OY - 22);
+    }
+    if (S.over) {
+      cx.fillStyle = "rgba(13,11,16,0.86)"; cx.fillRect(0, 0, W, H);
+      cx.font = "62px Impact, sans-serif"; cx.fillStyle = "#d1553f";
+      cx.fillText("THE HOARD IS GONE", W / 2, H / 2 - 16);
+      cx.font = "20px 'Trebuchet MS', sans-serif"; cx.fillStyle = "#e6dfd4";
+      cx.fillText("You held for " + S.wave + " wave" + (S.wave === 1 ? "" : "s") + ".", W / 2, H / 2 + 22);
+      cx.fillStyle = "#9a9089"; cx.font = "15px 'Trebuchet MS', sans-serif";
+      cx.fillText("Click anywhere to start a new run.", W / 2, H / 2 + 54);
+    }
+    if (S.paused && !S.over) {
+      cx.fillStyle = "rgba(13,11,16,0.7)"; cx.fillRect(0, 0, W, H);
+      cx.font = "46px Impact, sans-serif"; cx.fillStyle = "#e8c05a";
+      cx.fillText("PAUSED", W / 2, H / 2);
+    }
+  }
+
+  // ---------------------------------------------------------------- input
+  const hover = { col: -1, row: -1 };
+
+  function toBoard(ev) {
+    const r = cv.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * (W / r.width), y: (ev.clientY - r.top) * (H / r.height) };
+  }
+
+  cv.addEventListener("mousemove", ev => {
+    const p = toBoard(ev);
+    hover.col = Math.floor((p.x - OX) / CELL);
+    hover.row = Math.floor((p.y - OY) / CELL);
+    if (hover.col < 0 || hover.col >= COLS || hover.row < 0 || hover.row >= ROWS) { hover.col = -1; hover.row = -1; }
+  });
+  cv.addEventListener("mouseleave", () => { hover.col = -1; hover.row = -1; });
+  cv.addEventListener("contextmenu", ev => { ev.preventDefault(); clearSel(); });
+
+  cv.addEventListener("click", ev => {
+    if (S.over) { newRun(); renderRack(); renderSlots(); renderMods(); return; }
+    const p = toBoard(ev);
+
+    // 1. pick junk off the floor
+    const j = S.junk.find(j => Math.hypot(j.x - p.x, j.y - p.y) < 34);
+    if (j && S.satchel.length < 5) {
+      S.satchel.push(j.key);
+      S.junk = S.junk.filter(x => x !== j);
+      renderSlots();
+      return;
+    }
+
+    const col = Math.floor((p.x - OX) / CELL), row = Math.floor((p.y - OY) / CELL);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+    const occupant = goblinAt(col, row);
+
+    // 2. bolt a satchel item onto an existing goblin
+    if (S.selItem !== null) {
+      if (occupant && occupant.items.length < 2) {
+        const key = S.satchel[S.selItem];
+        if (!occupant.items.includes(key)) {
+          occupant.items.push(key);
+          if (key === "bucket") occupant.hp += 160;
+          S.satchel.splice(S.selItem, 1);
+          S.selItem = null;
+          renderSlots();
+        }
+      }
+      return;
+    }
+
+    // 3. place a goblin
+    if (S.selUnit && !occupant) {
+      const u = UNITS[S.selUnit];
+      if (S.hoard >= u.cost) {
+        spend(u.cost);
+        S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, cd: 0.6, items: [], pop: 0, recoil: 0, hurtT: 0 });
+        renderRack();
+      }
+    }
+  });
+
+  function clearSel() { S.selUnit = null; S.selItem = null; renderRack(); renderSlots(); }
+  addEventListener("keydown", e => { if (e.key === "Escape") clearSel(); });
+
+  // ---------------------------------------------------------------- chrome
+  const rack = document.getElementById("rack");
+  function renderRack() {
+    rack.innerHTML = "";
+    for (const [key, u] of Object.entries(UNITS)) {
+      const b = document.createElement("button");
+      b.className = "card";
+      b.type = "button";
+      b.style.setProperty("--unit", u.tint);
+      b.disabled = S.hoard < u.cost;
+      b.setAttribute("aria-pressed", String(S.selUnit === key));
+      b.innerHTML =
+        '<span class="card-name">' + u.name + "</span>" +
+        '<span class="card-cost">' + u.cost + " coins</span>" +
+        '<span class="card-desc">' + u.desc + "</span>";
+      b.addEventListener("click", () => {
+        S.selUnit = S.selUnit === key ? null : key;
+        S.selItem = null;
+        renderRack(); renderSlots();
+      });
+      rack.appendChild(b);
+    }
+  }
+
+  const slots = document.getElementById("slots");
+  const hint = document.getElementById("satchel-hint");
+  function renderSlots() {
+    slots.innerHTML = "";
+    S.satchel.forEach((key, i) => {
+      const b = document.createElement("button");
+      b.className = "slot";
+      b.type = "button";
+      b.title = ITEMS[key].name + " — " + ITEMS[key].blurb;
+      b.setAttribute("aria-pressed", String(S.selItem === i));
+      b.textContent = ITEMS[key].emoji;
+      b.addEventListener("click", () => {
+        S.selItem = S.selItem === i ? null : i;
+        S.selUnit = null;
+        renderSlots(); renderRack();
+      });
+      slots.appendChild(b);
+    });
+    hint.textContent = S.selItem !== null
+      ? "Now click a goblin on the board to bolt on the " + ITEMS[S.satchel[S.selItem]].name + "."
+      : S.satchel.length
+        ? "Click an item, then click a goblin. Two items per goblin."
+        : "Junk drops on the floor when heroes die. Click it to pick it up, then click a goblin to bolt it on.";
+  }
+
+  const modsEl = document.getElementById("hud-mods");
+  function renderMods() {
+    modsEl.innerHTML = "";
+    if (!S.curses.length) {
+      modsEl.innerHTML = '<span class="mod-empty">no curses yet</span>';
+      return;
+    }
+    for (const c of S.curses) {
+      const s = document.createElement("span");
+      s.className = "mod-chip";
+      s.textContent = c.name + " · " + c.blurb;
+      modsEl.appendChild(s);
+    }
+  }
+
+  const elHoard = document.getElementById("hud-hoard");
+  const elIncome = document.getElementById("hud-income");
+  const elWave = document.getElementById("hud-wave");
+  const elStatus = document.getElementById("hud-status");
+
+  document.getElementById("restart").addEventListener("click", () => {
+    newRun(); renderRack(); renderSlots(); renderMods();
+  });
+  const pauseBtn = document.getElementById("pause");
+  pauseBtn.addEventListener("click", () => {
+    S.paused = !S.paused;
+    pauseBtn.textContent = S.paused ? "Resume" : "Pause";
+  });
+
+  // ---------------------------------------------------------------- loop
+  let last = performance.now(), affordable = null;
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+
+    if (!S.paused && !S.over) update(dt);
+    render();
+
+    elHoard.textContent = Math.round(S.hoard);
+    elIncome.textContent = "+" + income().toFixed(1) + " / sec";
+    elWave.textContent = S.wave;
+    elStatus.textContent = S.over ? "run over" : S.phase === "breather" ? "regrouping" : S.heroes.length + " on the board";
+
+    // only re-render the rack when affordability actually flips
+    const aff = Object.keys(UNITS).map(k => S.hoard >= UNITS[k].cost).join("");
+    if (aff !== affordable) { affordable = aff; renderRack(); }
+
+    requestAnimationFrame(frame);
+  }
+
+  renderRack(); renderSlots(); renderMods();
+  requestAnimationFrame(frame);
+})();
+</script>
