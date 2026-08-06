@@ -204,6 +204,14 @@
       Four ideas, stripped of art and story so the loop can be judged on its own. Everything else &mdash;
       roster depth, characterisation, the run structure &mdash; is deliberately absent.
     </p>
+    <p>
+      The pacing skeleton is lifted from the original rather than guessed at. Waves are built by
+      spending a point budget from a weighted pool, with tougher heroes gated behind a wave number.
+      The next wave arrives on a 20-second timer <em>or</em> the moment you break the current one below
+      half health &mdash; so killing fast pulls the game forward and slow enemies never turn into dead
+      time. The wave before a banner never triggers early, which is what turns that gap into dread
+      instead of a lull. Hoarders take about 48 seconds to pay for themselves, the same as a Sunflower.
+    </p>
     <ul>
       <li>
         <strong>The hoard is one number doing three jobs.</strong> It is your currency, your income rate,
@@ -224,8 +232,9 @@
         goblin. <span class="q">Does finding a combination feel like discovery?</span>
       </li>
       <li>
-        <strong>Curses stack with depth.</strong> Every third wave the cave itself gets worse, permanently,
-        for the rest of the run. <span class="q">Does escalating the environment beat just adding more enemies?</span>
+        <strong>Curses stack with depth.</strong> Every fifth wave is a banner wave &mdash; roughly double
+        size, and the cave itself gets permanently worse for the rest of the run.
+        <span class="q">Does escalating the environment beat just adding more enemies?</span>
       </li>
     </ul>
   </section>
@@ -268,7 +277,10 @@
     },
     hoarder: {
       name: "Hoarder", cost: 50, hp: 90, tint: "#c9d45f",
-      desc: "Drags 25 coins to the pile every 8s. Fragile.",
+      // Sunflower's actual maths: 50 sun, 25 back every 24s, first at ~7s.
+      // That's a ~48s payback — mine was paying back in 16s, hence the runaway.
+      desc: "Drags 25 coins to the pile every 20s. Slow to pay off.",
+      warmup: 7,
     },
     barricade: {
       name: "Barricade", cost: 50, hp: 560, tint: "#3f8a4a",
@@ -309,10 +321,22 @@
 
   const HEROES = {
     // `pack` is how much a hero can carry before it turns and runs for the exit.
-    squire: { name: "Squire", hp: 105, speed: 30, dps: 22, drop: 0.10, pack: 80 },
-    knight: { name: "Knight", hp: 340, speed: 26, dps: 28, drop: 0.26, pack: 190 },
-    rogue:  { name: "Rogue",  hp: 62,  speed: 64, dps: 0,  drop: 0.34, pack: 60 },
+    // Speeds are set from PvZ's basic zombie: ~4.7s to cross one column.
+    squire: { name: "Squire", hp: 105, speed: 20, dps: 22, drop: 0.10, pack: 80 },
+    knight: { name: "Knight", hp: 340, speed: 15, dps: 28, drop: 0.26, pack: 190 },
+    rogue:  { name: "Rogue",  hp: 62,  speed: 46, dps: 0,  drop: 0.34, pack: 60 },
   };
+
+  // PvZ builds each wave by spending a point budget from a weighted pool, with
+  // stronger types gated behind a wave number. Same idea here.
+  const HERO_POOL = [
+    { type: "squire", pts: 1, weight: 60, from: 1 },
+    { type: "rogue",  pts: 3, weight: 30, from: 2 },
+    { type: "knight", pts: 4, weight: 22, from: 3 },
+  ];
+  const WAVE_TIMER = 20;      // seconds before the next wave comes regardless
+  const BREAK_AT = 0.5;       // …or immediately, once the wave is down to this much health
+  const BANNER_EVERY = 5;     // every Nth wave is a big telegraphed one
 
   const CURSES = [
     { id: "torchlit", name: "Torchlit Halls",  blurb: "heroes +20% speed" },
@@ -326,7 +350,7 @@
   let S;
   function newRun() {
     S = {
-      hoard: START_HOARD, wave: 0, phase: "breather", phaseT: 4,
+      hoard: START_HOARD, wave: 0, phase: "breather", phaseT: 4, waveHp: 0,
       goblins: [], heroes: [], shots: [], junk: [], puffs: [], coins: [],
       traps: [true, true, true, true, true],   // one-shot per lane, like a lawnmower
       satchel: [], curses: [], queue: [],
@@ -352,23 +376,27 @@
   }
 
   // ---------------------------------------------------------------- waves
+  const isBanner = n => n % BANNER_EVERY === 0;
+
   function buildWave(n) {
+    let budget = Math.round(3 + n * 2.2);
+    if (isBanner(n)) budget = Math.round(budget * 2.1);
+
+    const pool = HERO_POOL.filter(h => n >= h.from);
+    const gap = Math.max(0.3, 1.5 - n * 0.07);
     const q = [];
     let t = 0;
-    const squires = 2 + Math.floor(n * 1.4);
-    const knights = n < 2 ? 0 : Math.floor(n * 0.7);
-    const rogues  = n < 2 ? 0 : Math.floor(n * 0.8);   // walls can't answer these; they keep a solved board honest
-    const gap = Math.max(0.35, 1.6 - n * 0.09);   // waves tighten as the run goes deeper
-    const push = (type, count) => {
-      for (let i = 0; i < count; i++) {
-        t += rnd(gap * 0.6, gap * 1.6);
-        q.push({ type, lane: (Math.random() * ROWS) | 0, at: t });
-      }
-    };
-    push("squire", squires);
-    push("knight", knights);
-    push("rogue", rogues);
-    q.sort((a, b) => a.at - b.at);
+
+    while (budget > 0) {
+      const afford = pool.filter(h => h.pts <= budget);
+      if (!afford.length) break;
+      const total = afford.reduce((s, h) => s + h.weight, 0);
+      let r = Math.random() * total, chosen = afford[afford.length - 1];
+      for (const h of afford) { r -= h.weight; if (r <= 0) { chosen = h; break; } }
+      budget -= chosen.pts;
+      t += rnd(gap * 0.6, gap * 1.6);
+      q.push({ type: chosen.type, lane: (Math.random() * ROWS) | 0, at: t });
+    }
     return q;
   }
 
@@ -377,20 +405,30 @@
     S.queue = buildWave(S.wave);
     S.phase = "fight";
     S.phaseT = 0;
-    if (S.wave % 3 === 0) {
+    S.waveHp = 0;             // filled in as this wave's heroes actually spawn
+    if (isBanner(S.wave)) {
       const avail = CURSES.filter(c => !hasCurse(c.id));
       if (avail.length) S.curses.push(pick(avail));
       renderMods();
     }
   }
 
+  // Health remaining in the current wave, as a fraction of what it spawned with.
+  function waveHealthLeft() {
+    if (!S.waveHp) return 1;
+    let alive = 0;
+    for (const h of S.heroes) if (h.wave === S.wave && h.hp > 0) alive += h.hp;
+    return alive / S.waveHp;
+  }
+
   function spawnHero(type, lane) {
     const d = HEROES[type];
     const hp = d.hp * (hasCurse("armour") ? 1.35 : 1);
     S.heroes.push({
-      type, lane, x: W + 20, hp, maxHp: hp,
+      type, lane, x: W + 20, hp, maxHp: hp, wave: S.wave,
       carrying: 0, fleeing: false, burn: 0, burnT: 0, hitT: 0, bob: rnd(0, 6.28),
     });
+    S.waveHp += hp;
   }
 
   // ---------------------------------------------------------------- update
@@ -408,8 +446,15 @@
         const e = S.queue.shift();
         spawnHero(e.type, e.lane);
       }
-      // don't wait on one slow knight — waves overlap, so the pressure never fully drops
-      if (!S.queue.length && S.heroes.length <= 1) { S.phase = "breather"; S.phaseT = 6; }
+      // PvZ's trick: the next wave comes on a timer, OR early once you've broken
+      // the current one. Killing fast pulls the game forward, so slow enemies never
+      // mean dead time — and the wave before a banner never triggers early, which
+      // is what makes the calm before it feel like dread rather than a lull.
+      if (!S.queue.length) {
+        const spent = S.phaseT >= WAVE_TIMER;
+        const broken = waveHealthLeft() <= BREAK_AT && !isBanner(S.wave + 1);
+        if (spent || broken || !S.heroes.length) { S.phase = "breather"; S.phaseT = broken ? 2.5 : 5; }
+      }
     }
 
     // --- goblins
@@ -437,7 +482,7 @@
       }
 
       if (g.type === "hoarder" && g.cd <= 0) {
-        g.cd = 8;
+        g.cd = 20;
         g.pop = 0.4;
         addCoins(25, p.x + 48, p.y + 40);
       }
@@ -815,9 +860,11 @@
     // banners
     cx.textAlign = "center";
     if (S.phase === "breather" && !S.over) {
-      cx.font = "34px Impact, sans-serif";
-      cx.fillStyle = "rgba(232,192,90," + (0.55 + Math.sin(S.t * 4) * 0.25) + ")";
-      cx.fillText("WAVE " + (S.wave + 1) + " APPROACHING", W / 2, OY - 22);
+      const next = S.wave + 1, big = isBanner(next);
+      const pulse = 0.55 + Math.sin(S.t * (big ? 7 : 4)) * 0.3;
+      cx.font = (big ? 40 : 34) + "px Impact, sans-serif";
+      cx.fillStyle = big ? "rgba(209,85,63," + pulse + ")" : "rgba(232,192,90," + pulse + ")";
+      cx.fillText(big ? "BANNER WAVE " + next + " — BRACE" : "WAVE " + next + " APPROACHING", W / 2, OY - 22);
     }
     if (S.over) {
       cx.fillStyle = "rgba(13,11,16,0.86)"; cx.fillRect(0, 0, W, H);
@@ -889,7 +936,7 @@
       const u = UNITS[S.selUnit];
       if (S.hoard >= u.cost) {
         spend(u.cost);
-        S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, cd: 0.6, items: [], pop: 0, recoil: 0, hurtT: 0 });
+        S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, cd: u.warmup || 0.6, items: [], pop: 0, recoil: 0, hurtT: 0 });
         renderRack();
       }
     }
