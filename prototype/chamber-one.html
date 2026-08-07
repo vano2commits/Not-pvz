@@ -130,7 +130,7 @@
 
   <div class="hud">
     <div class="readout">
-      <span class="readout-label">Coins</span>
+      <span class="readout-label">Coins &middot; click to gather</span>
       <span class="readout-value gold" id="hud-coins">0</span>
     </div>
     <div class="readout">
@@ -161,10 +161,12 @@
   </div>
 
   <p class="foot">
-    One level, built for feel rather than scope. Every action is meant to answer back: placement
-    thumps and kicks up dirt, throws wind up and recoil, hits stop the world for two frames, and a
-    merge is the loudest thing in the game. <b>All sound is synthesised live</b> &mdash; no audio
-    files &mdash; so every impact lands at a slightly different pitch and nothing wears out.
+    One level, built for feel rather than scope. Every action answers back: placement thumps and
+    kicks up dirt, throws wind up and recoil, and a merge is the loudest thing in the game.
+    <b>There is no passive income</b> &mdash; every coin was carried in by somebody who died for it,
+    so it spills out, bounces, and lies there until you pick it up. Screen shake is reserved for rare
+    events; a rock landing moves the target, not the camera. <b>All sound is synthesised live</b>
+    &mdash; no audio files &mdash; so every impact lands at a slightly different pitch.
   </p>
 </div>
 
@@ -304,8 +306,10 @@
   const COLS = 9, ROWS = 5, CELL = 96;
   const OX = 96, OY = 64;
 
-  const START_COINS = 175;
-  const SKY_RATE = 4.6;
+  const START_COINS = 260;   // two Chuckers and a Barricade, not two Chuckers flat
+  // No passive income at all. Every coin in the level was carried in by somebody who
+  // died for it, so earning is downstream of killing and there is nothing to idle for.
+  const COIN_LIFE = 11;
   const MAX_TIER = 3;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -323,14 +327,14 @@
   const ITEM_KEYS = Object.keys(ITEMS);
 
   const UNITS = {
-    chucker:   { name: "Chucker",   cost: 50, hp: 120, tint: "#6fbf5b", desc: "Throws rocks down the lane." },
-    hoarder:   { name: "Hoarder",   cost: 50, hp: 95,  tint: "#c9d45f", desc: "25 coins every ~24s." },
-    barricade: { name: "Barricade", cost: 50, hp: 520, tint: "#3f8a4a", desc: "Doesn't fight. Won't move." },
+    chucker:   { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", desc: "Throws rocks down the lane." },
+    hoarder:   { name: "Hoarder",   cost: 50,  hp: 95,  tint: "#c9d45f", desc: "Gathers loose coins in its lane." },
+    barricade: { name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", desc: "Doesn't fight. Won't move." },
   };
 
   const FOES = {
-    squire: { name: "Squire", hp: 110, speed: 20, dps: 22, drop: 0.20 },
-    scout:  { name: "Scout",  hp: 74,  speed: 42, dps: 16, drop: 0.30 },
+    squire: { name: "Squire", hp: 110, speed: 24, dps: 22, drop: 0.20, purse: 38 },
+    scout:  { name: "Scout",  hp: 74,  speed: 46, dps: 16, drop: 0.30, purse: 30 },
   };
 
   // Hand-authored, not generated. Six waves, each with a shape.
@@ -351,7 +355,7 @@
   function newRun() {
     S = {
       coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 2.4,
-      goblins: [], foes: [], shots: [], junk: [], parts: [], rings: [], pops: [],
+      goblins: [], foes: [], shots: [], junk: [], parts: [], rings: [], pops: [], loot: [],
       traps: [true, true, true, true, true],
       satchel: [], queue: [],
       selUnit: null, selItem: null, selGob: null,
@@ -376,7 +380,10 @@
   }
 
   // ================================================================ feel layer
-  const kick = (amount) => { S.shake = Math.min(22, S.shake + amount); };
+  // Screen shake is a budget, not a garnish. It belongs to events that happen
+  // *rarely* — five lanes landing rocks at 2.4 each was a permanent tremor. Common
+  // events get local feedback (flash, knockback, sparks) and no camera movement.
+  const kick = (amount) => { S.shake = Math.min(12, Math.max(S.shake, amount)); };
   const stop = (seconds) => { S.freeze = Math.max(S.freeze, seconds); };
   const flash = (a) => { S.flash = Math.max(S.flash, a); };
 
@@ -414,7 +421,7 @@
     S.bannerText = "WAVE " + (S.waveIx + 1) + " — " + w.name.toUpperCase();
     S.banner = 2.2;
     Sound.play("wave");
-    kick(5);
+    kick(2.5);
     renderPips();
   }
 
@@ -441,11 +448,10 @@
   // ==================================================================== update
   function update(dt) {
     S.t += dt;
-    if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 52);
+    if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 95);
     if (S.flash > 0) S.flash = Math.max(0, S.flash - dt * 3.4);
     if (S.banner > 0) S.banner -= dt;
 
-    S.coins += SKY_RATE * dt;
 
     if (S.phase === "intro") {
       S.phaseT -= dt;
@@ -494,18 +500,20 @@
         }
       }
 
-      if (g.type === "hoarder" && g.cd <= 0) {
-        g.cd = rnd(23, 25);
-        g.squash = 1;
-        const amt = Math.round(25 * RANK_POWER(g.tier));
-        S.coins += amt;
-        popText(p.x + 48, p.y + 34, "+" + amt, "#e8c05a");
-        burst(p.x + 48, p.y + 40, 7, { colors: ["#e8c05a", "#fff0c2"], spread: 130, size: [2, 3.6],
-                                        gravity: 420, life: [0.3, 0.6] });
-        ring(p.x + 48, p.y + 48, 34, "rgba(232,192,90,.55)", 2, 0.4);
-        Sound.play("coin");
-        bumpCoins();
+      // Gathers rather than generates: any loose coin in its lane gets dragged in.
+      // A magnet reads better as a direct pull than as an applied force — a coin lying
+      // on the floor has its velocity damped every frame, which eats the force.
+      if (g.type === "hoarder") {
+        const reach = 150 * RANK_POWER(g.tier);
+        for (const c of S.loot) {
+          if (c.lane !== g.row || c.taken) continue;
+          if (Math.abs((p.x + 48) - c.x) > reach) continue;
+          c.pullX = p.x + 48;
+          c.pullY = p.y + 50;
+          if (!g.gathering) { g.gathering = 0.3; g.squash = 0.8; }
+        }
       }
+      if (g.gathering > 0) g.gathering -= dt;
     }
     S.goblins = S.goblins.filter(g => g.hp > 0);
     if (S.selGob && S.selGob.hp <= 0) S.selGob = null;
@@ -525,8 +533,6 @@
                              spread: 230, size: [1.6, 3.6], dir: Math.PI, cone: 2.2,
                              gravity: 420, life: [0.15, 0.4] });
         ring(s.x, s.y, 26, "rgba(255,255,255,.5)", 2, 0.18);
-        stop(0.028);
-        kick(2.4);
         Sound.play("hit");
       }
       if (s.x > W + 30) s.dead = true;
@@ -570,7 +576,7 @@
           const gp = cellOf(wall);
           burst(gp.x + 48, gp.y + 50, 18, { colors: ["#6fbf5b", "#3f8a4a", "#2b5e33"], spread: 260, size: [2, 5] });
           ring(gp.x + 48, gp.y + 50, 54, "rgba(111,191,91,.5)", 3, 0.3);
-          kick(4); stop(0.04);
+          kick(2.6); stop(0.03);
           Sound.play("kill");
         }
         continue;
@@ -592,7 +598,7 @@
           ring(OX + 26, laneY(f.lane) + 56, 220, "rgba(232,192,90,.8)", 5, 0.45);
           burst(OX + 26, laneY(f.lane) + 56, 26,
                 { colors: ["#e8c05a", "#fff3cf", "#8f8698"], spread: 420, size: [2, 5.5] });
-          kick(16); stop(0.09); flash(0.34);
+          kick(12); stop(0.08); flash(0.3);
           Sound.play("trap");
         } else {
           defeat();
@@ -606,12 +612,46 @@
       f.dead = true;
       killEffects(f, false);
       S.killed++;
+      spillPurse(f);
       if (Math.random() < FOES[f.type].drop || (S.waveIx === 0 && S.killed === 1)) {
         S.junk.push({ x: clamp(f.x, OX + 24, W - 34), y: laneY(f.lane) + 60,
                       key: pick(ITEM_KEYS), life: 13, bob: rnd(0, 6.3), born: 0 });
       }
     }
     S.foes = S.foes.filter(f => f.hp > 0);
+
+    for (const c of S.loot) {
+      c.born += dt;
+      if (c.pullX !== undefined) {                 // being drawn in by a Hoarder
+        const k = Math.min(1, dt * 9);
+        c.x += (c.pullX - c.x) * k;
+        c.y += (c.pullY - c.y) * k;
+        c.spin += dt * 14;
+        c.rest = false; c.vy = 0; c.vx = 0;
+        if (Math.hypot(c.pullX - c.x, c.pullY - c.y) < 16) collect(c);
+        c.pullX = undefined;
+        c.life -= dt;
+        continue;
+      }
+      if (!c.rest) {
+        c.vy += 1150 * dt;
+        c.x += c.vx * dt; c.y += c.vy * dt;
+        c.spin += c.spinV * dt;
+        if (c.y >= c.floor && c.vy > 0) {
+          if (c.bounced < 2 && c.vy > 90) {         // one or two bounces, then it lies still
+            c.y = c.floor; c.vy *= -0.42; c.vx *= 0.62; c.spinV *= 0.5; c.bounced++;
+            burst(c.x, c.floor + 2, 2, { colors: ["#8a7134"], spread: 40, size: [1, 2],
+                                          gravity: 400, life: [0.12, 0.24] });
+          } else {
+            c.y = c.floor; c.vy = 0; c.vx *= 0.5; c.rest = true; c.spinV *= 0.4;
+          }
+        }
+      }
+      if (c.rest) { c.vx *= 0.88; c.x += c.vx * dt; }
+      c.life -= dt;
+      if (c.life <= 0) c.taken = true;
+    }
+    S.loot = S.loot.filter(c => !c.taken);
 
     for (const j of S.junk) { j.life -= dt; j.bob += dt * 3.4; j.born += dt; }
     S.junk = S.junk.filter(j => j.life > 0);
@@ -630,12 +670,41 @@
     S.pops = S.pops.filter(p => p.t < p.life);
   }
 
+  // Coins arc out of a body, bounce once and settle. They are the only income in the
+  // level, so they are worth the physics.
+  function spillPurse(f) {
+    const total = FOES[f.type].purse;
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+    const each = Math.round(total / n);
+    for (let i = 0; i < n; i++) {
+      S.loot.push({
+        x: f.x + rnd(-8, 8), y: laneY(f.lane) + rnd(30, 46),
+        vx: rnd(-70, 110), vy: rnd(-250, -140),
+        lane: f.lane, floor: laneY(f.lane) + rnd(62, 82),
+        value: i === n - 1 ? total - each * (n - 1) : each,
+        life: COIN_LIFE, spin: rnd(0, 6.3), spinV: rnd(-7, 7),
+        rest: false, bounced: 0, taken: false, born: 0,
+      });
+    }
+  }
+
+  function collect(c) {
+    if (c.taken) return;
+    c.taken = true;
+    S.coins += c.value;
+    popText(c.x, c.y - 6, "+" + c.value, "#e8c05a");
+    burst(c.x, c.y, 6, { colors: ["#e8c05a", "#fff3cf"], spread: 150, size: [1.6, 3], gravity: 240,
+                         life: [0.2, 0.4] });
+    Sound.play("coin");
+    bumpCoins();
+  }
+
   function killEffects(f, byTrap) {
     const y = laneY(f.lane) + 44;
     burst(f.x, y, byTrap ? 10 : 16,
           { colors: ["#c9ced8", "#8b93a2", "#5a5560"], spread: 300, size: [2, 4.6], life: [0.35, 0.8] });
     ring(f.x, y, 42, "rgba(201,206,216,.45)", 2.5, 0.26);
-    if (!byTrap) { kick(3.5); stop(0.035); Sound.play("kill"); }
+    if (!byTrap) { kick(1.6); Sound.play("kill"); }
   }
 
   function hurt(f, dmg, fire) {
@@ -910,6 +979,26 @@
 
     S.foes.forEach(drawFoe);
 
+    for (const c of S.loot) {
+      const fade = c.life < 3 ? 0.35 + Math.abs(Math.sin(c.life * 8)) * 0.65 : 1;
+      const grow = clamp(c.born * 7, 0, 1);
+      cx.globalAlpha = fade;
+      cx.fillStyle = "rgba(0,0,0,.3)";
+      cx.beginPath(); cx.ellipse(c.x, c.floor + 3, 7 * grow, 2.6, 0, 0, 6.284); cx.fill();
+      cx.save();
+      cx.translate(c.x, c.y);
+      // spin reads as a coin edge-on rather than a rotating disc
+      const w = Math.abs(Math.cos(c.spin)) * 8 + 1.6;
+      cx.fillStyle = "#8a7134";
+      cx.beginPath(); cx.ellipse(0, 0, w * grow, 8 * grow, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "#e8c05a";
+      cx.beginPath(); cx.ellipse(-0.6, -0.8, w * 0.78 * grow, 6.4 * grow, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "rgba(255,248,222,.85)";
+      cx.beginPath(); cx.ellipse(-w * 0.28 * grow, -2.4 * grow, w * 0.2 * grow, 1.8 * grow, 0, 0, 6.284); cx.fill();
+      cx.restore();
+      cx.globalAlpha = 1;
+    }
+
     for (const j of S.junk) {
       const grow2 = clamp(j.born * 5, 0, 1);
       const fade = j.life < 3.5 ? 0.35 + Math.abs(Math.sin(j.life * 7)) * 0.65 : 1;
@@ -1014,6 +1103,12 @@
     if (S.paused) return;
     const p = toBoard(ev);
 
+    let got = 0;
+    for (const c of S.loot) {
+      if (!c.taken && Math.hypot(c.x - p.x, c.y - p.y) < 34) { collect(c); got++; }
+    }
+    if (got) return;
+
     const j = S.junk.find(j => Math.hypot(j.x - p.x, j.y - p.y) < 36);
     if (j) {
       S.satchel.push(j.key);
@@ -1042,7 +1137,7 @@
           burst(gp.x + 48, gp.y + 40, 12, { colors: ["#e8c05a", "#fff3cf"], spread: 200, size: [1.8, 3.6] });
           ring(gp.x + 48, gp.y + 48, 44, "rgba(232,192,90,.6)", 2.5, 0.32);
           popText(gp.x + 48, gp.y + 26, ITEMS[key].name, "#e8c05a");
-          kick(3); Sound.play("pickup");
+          kick(1.5); Sound.play("pickup");
           renderSlots();
         } else {
           S.selItem = null; S.selGob = occ; Sound.play("deny"); renderSlots();
@@ -1064,7 +1159,7 @@
       burst(gx, gy + 26, 12, { colors: ["#4a4150", "#3b3340", "#5a5060"], spread: 210,
                                size: [1.8, 4], gravity: 520, life: [0.2, 0.45] });
       ring(gx, gy + 24, 48, "rgba(160,150,170,.4)", 2.5, 0.28);
-      kick(4.5); stop(0.03);
+      kick(3); stop(0.02);
       Sound.play("place");
       S.selUnit = null;
       renderRack();
@@ -1092,7 +1187,7 @@
         ring(gp.x + 48, gp.y + 48, 110, "rgba(255,243,207,.85)", 4, 0.4);
         ring(gp.x + 48, gp.y + 48, 74, "rgba(232,192,90,.7)", 3, 0.5);
         popText(gp.x + 48, gp.y + 16, nameOf(occ), "#fff3cf");
-        kick(11); stop(0.1); flash(0.3);
+        kick(10); stop(0.09); flash(0.26);
         Sound.play("merge");
       } else {
         S.selGob = occ; Sound.play("select");
