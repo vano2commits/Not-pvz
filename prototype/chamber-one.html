@@ -306,7 +306,15 @@
   const COLS = 9, ROWS = 5, CELL = 96;
   const OX = 96, OY = 64;
 
-  const START_COINS = 260;   // two Chuckers and a Barricade, not two Chuckers flat
+  // PvZ 1-1 is a ONE lane level. 1-2 is three. Five lanes do not arrive until the
+  // player can defend five. Handing a beginner the full board is what made this
+  // unwinnable: heroes walked into lanes there was never money to cover.
+  const OPEN_ROWS = [1, 2, 3];
+  const isOpen = r => OPEN_ROWS.includes(r);
+
+  // 1-1 also starts you on 150 sun against the usual 50 — triple. The opening is
+  // meant to be furnished, not scraped together.
+  const START_COINS = 320;
   // No passive income at all. Every coin in the level was carried in by somebody who
   // died for it, so earning is downstream of killing and there is nothing to idle for.
   const COIN_LIFE = 11;
@@ -328,26 +336,33 @@
 
   const UNITS = {
     chucker:   { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", desc: "Throws rocks down the lane." },
-    hoarder:   { name: "Hoarder",   cost: 50,  hp: 95,  tint: "#c9d45f", desc: "Gathers loose coins in its lane." },
+    hoarder:   { name: "Hoarder",   cost: 50,  hp: 95,  tint: "#c9d45f", desc: "Its lane pays 60% more, and it gathers without a click." },
     barricade: { name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", desc: "Doesn't fight. Won't move." },
   };
 
   const FOES = {
-    squire: { name: "Squire", hp: 110, speed: 24, dps: 22, drop: 0.20, purse: 38 },
-    scout:  { name: "Scout",  hp: 74,  speed: 46, dps: 16, drop: 0.30, purse: 30 },
+    // `pts` is the wave-point value, straight out of the original's table where a
+    // Basic is 1 and a Conehead is 2. It also decides how much a spawn "uses up" a lane.
+    squire: { name: "Squire", hp: 110, speed: 24, dps: 22, drop: 0.20, purse: 38, pts: 1 },
+    scout:  { name: "Scout",  hp: 74,  speed: 46, dps: 16, drop: 0.30, purse: 30, pts: 2 },
   };
 
   // Hand-authored, not generated. Six waves, each with a shape.
+  // Three lanes, and a wave-points budget in the original's shape: Squire is a 1
+  // point Low, Scout a 2 point Medium, and the Medium class is held back until the
+  // player has had two waves to learn the board.
+  // Types are authored; lanes are not. The original weights lane choice against
+  // wherever it has already been sending things, which is what stops three lanes
+  // opening at once on a board you cannot yet cover.
   const WAVES = [
-    { name: "First light",   list: [["squire",0],["squire",3]] },
-    { name: "They regroup",  list: [["squire",1],["squire",2],["squire",4]] },
-    { name: "Outriders",     list: [["squire",0],["scout",2],["squire",3],["squire",4],["scout",1]] },
-    { name: "Pressing in",   list: [["squire",1],["squire",1],["scout",3],["squire",4],["scout",0],["squire",2]] },
-    { name: "The long push", list: [["squire",0],["squire",2],["squire",4],["scout",1],["scout",3],
-                                    ["squire",1],["squire",3],["scout",2]] },
-    { name: "Last of them",  list: [["squire",0],["squire",1],["squire",2],["squire",3],["squire",4],
-                                    ["scout",0],["scout",2],["scout",4],["squire",1],["squire",3],
-                                    ["scout",1],["squire",2]] },
+    { name: "First light",   list: ["squire","squire"] },
+    { name: "They regroup",  list: ["squire","squire","squire"] },
+    { name: "Outriders",     list: ["squire","squire","scout","squire"] },
+    { name: "Pressing in",   list: ["squire","squire","scout","squire","scout"] },
+    { name: "The long push", list: ["squire","squire","squire","scout","scout","squire","squire"] },
+    // Final Wave: the original guarantees one of every type the level can show.
+    { name: "Last of them",  list: ["squire","scout","squire","squire","scout","squire",
+                                    "squire","scout","squire","squire"], final: true },
   ];
 
   // ===================================================================== state
@@ -357,6 +372,9 @@
       coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 2.4,
       goblins: [], foes: [], shots: [], junk: [], parts: [], rings: [], pops: [], loot: [],
       traps: [true, true, true, true, true],
+      laneLoad: [0, 0, 0, 0, 0],      // wave-points already sent down each lane
+      laneQuiet: [0, 0, 0, 0, 0],     // waves of silence owed to a lane whose trap fired
+      spawnCount: 0,
       satchel: [], queue: [],
       selUnit: null, selItem: null, selGob: null,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
@@ -412,10 +430,16 @@
     const w = WAVES[S.waveIx];
     let t = 0;
     const gap = Math.max(0.7, 1.9 - S.waveIx * 0.18);
-    S.queue = w.list.map(([type, lane]) => {
+    S.queue = w.list.map(type => {
       t += rnd(gap * 0.65, gap * 1.5);
-      return { type, lane, at: t };
+      return { type, at: t };
     });
+    // history fades between waves so the spread tracks recent pressure, not the
+    // whole level, and lanes owed silence tick down
+    for (let r = 0; r < ROWS; r++) {
+      S.laneLoad[r] *= 0.7;
+      if (S.laneQuiet[r] > 0) S.laneQuiet[r]--;
+    }
     S.phase = "fight";
     S.phaseT = 0;
     S.bannerText = "WAVE " + (S.waveIx + 1) + " — " + w.name.toUpperCase();
@@ -423,6 +447,29 @@
     Sound.play("wave");
     kick(2.5);
     renderPips();
+  }
+
+  // Straight from the original's behaviour: a lane that has already taken spawns is
+  // less likely to take the next one, weighted by the wave-points it has absorbed. The
+  // first two spawns of a level are uniform (they still count toward later weights),
+  // and a lane whose trap has just fired goes almost silent for two waves.
+  function chooseLane() {
+    const open = OPEN_ROWS.filter(r => true);
+    if (S.spawnCount < 2) {
+      const r = pick(open);
+      return r;
+    }
+    const w = open.map(r => {
+      if (S.laneQuiet[r] > 0) return 1e-6;
+      return 1 / (1 + S.laneLoad[r]);
+    });
+    const tot = w.reduce((a, b) => a + b, 0);
+    let x = Math.random() * tot;
+    for (let i = 0; i < open.length; i++) {
+      x -= w[i];
+      if (x <= 0) return open[i];
+    }
+    return open[open.length - 1];
   }
 
   function spawnFoe(type, lane) {
@@ -434,6 +481,8 @@
       squash: 0, step: 0, dead: false,
     });
     S.spawned++;
+    S.spawnCount++;
+    S.laneLoad[lane] += d.pts;
   }
 
   function victory() {
@@ -460,7 +509,7 @@
       S.phaseT += dt;
       while (S.queue.length && S.queue[0].at <= S.phaseT) {
         const e = S.queue.shift();
-        spawnFoe(e.type, e.lane);
+        spawnFoe(e.type, chooseLane());
       }
       if (!S.queue.length && !S.foes.length) {
         S.phase = "breath";
@@ -594,6 +643,7 @@
       if (f.x <= OX) {
         if (S.traps[f.lane]) {
           S.traps[f.lane] = false;
+          S.laneQuiet[f.lane] = 2;      // the lane you just lost goes quiet, as after a mower
           for (const v of S.foes) if (v.lane === f.lane && v.hp > 0) { v.hp = 0; killEffects(v, true); }
           ring(OX + 26, laneY(f.lane) + 56, 220, "rgba(232,192,90,.8)", 5, 0.45);
           burst(OX + 26, laneY(f.lane) + 56, 26,
@@ -673,7 +723,8 @@
   // Coins arc out of a body, bounce once and settle. They are the only income in the
   // level, so they are worth the physics.
   function spillPurse(f) {
-    const total = FOES[f.type].purse;
+    const rich = S.goblins.some(g => g.type === "hoarder" && g.row === f.lane && g.hp > 0);
+    const total = Math.round(FOES[f.type].purse * (rich ? 1.6 : 1));
     const n = 2 + (Math.random() < 0.5 ? 1 : 0);
     const each = Math.round(total / n);
     for (let i = 0; i < n; i++) {
@@ -916,20 +967,38 @@
     }
 
     for (let r = 0; r < ROWS; r++) {
+      if (!isOpen(r)) {
+        cx.fillStyle = "#141118";
+        cx.fillRect(OX, OY + r * CELL, COLS * CELL, CELL);
+        // collapsed ground: this lane is not open yet
+        cx.fillStyle = "#221d27";
+        for (let i = 0; i < 22; i++) {
+          const a = ((i * 2.399) % 1), b = ((i * 4.771) % 1);
+          const px = OX + a * COLS * CELL, py = OY + r * CELL + 10 + b * (CELL - 20);
+          cx.beginPath();
+          cx.ellipse(px, py, 13 + (i % 4) * 5, 8 + (i % 3) * 3, a * 3, 0, 6.284);
+          cx.fill();
+        }
+        cx.fillStyle = "#2b2431";
+        cx.fillRect(OX, OY + r * CELL, COLS * CELL, 3);
+        cx.fillRect(OX, OY + (r + 1) * CELL - 3, COLS * CELL, 3);
+        continue;
+      }
       cx.fillStyle = r % 2 ? "#241f26" : "#2a2430";
       cx.fillRect(OX, OY + r * CELL, COLS * CELL, CELL);
     }
     cx.strokeStyle = "rgba(0,0,0,.35)"; cx.lineWidth = 1;
+    const top = OY + OPEN_ROWS[0] * CELL, bot = OY + (OPEN_ROWS[OPEN_ROWS.length - 1] + 1) * CELL;
     for (let c = 0; c <= COLS; c++) {
-      cx.beginPath(); cx.moveTo(OX + c * CELL, OY); cx.lineTo(OX + c * CELL, OY + ROWS * CELL); cx.stroke();
+      cx.beginPath(); cx.moveTo(OX + c * CELL, top); cx.lineTo(OX + c * CELL, bot); cx.stroke();
     }
-    for (let r = 0; r <= ROWS; r++) {
+    for (let r = OPEN_ROWS[0]; r <= OPEN_ROWS[OPEN_ROWS.length - 1] + 1; r++) {
       cx.beginPath(); cx.moveTo(OX, OY + r * CELL); cx.lineTo(OX + COLS * CELL, OY + r * CELL); cx.stroke();
     }
 
     if (S.selUnit && hover.col >= 0 && !S.over) {
       const u = UNITS[S.selUnit];
-      const ok = !gobAt(hover.col, hover.row) && S.coins >= u.cost;
+      const ok = !gobAt(hover.col, hover.row) && S.coins >= u.cost && isOpen(hover.row);
       const pulse = 0.14 + Math.sin(S.t * 8) * 0.06;
       cx.fillStyle = ok ? "rgba(111,191,91," + (pulse + 0.08) + ")" : "rgba(209,85,63,.18)";
       cx.fillRect(OX + hover.col * CELL, OY + hover.row * CELL, CELL, CELL);
@@ -941,6 +1010,7 @@
     drawCaravan();
 
     for (let r = 0; r < ROWS; r++) {
+      if (!isOpen(r)) continue;
       const yy = laneY(r) + 62;
       cx.globalAlpha = S.traps[r] ? 1 : 0.13;
       cx.strokeStyle = "#8f8698"; cx.lineWidth = 2.5;
@@ -1147,7 +1217,7 @@
     }
 
     if (S.selUnit) {
-      if (occ) { Sound.play("deny"); return; }
+      if (occ || !isOpen(row)) { Sound.play("deny"); return; }
       const u = UNITS[S.selUnit];
       if (S.coins < u.cost) { Sound.play("deny"); denyCard(S.selUnit); return; }
       S.coins -= u.cost;
