@@ -223,7 +223,7 @@
   <div class="rack" id="rack"></div>
 
   <div class="inspector" id="inspector">
-    <div class="insp-empty" id="insp-empty">Tap a goblin on the board to inspect it, bolt junk onto it, merge it, or dig it up.</div>
+    <div class="insp-empty" id="insp-empty">Tap a goblin to inspect it, bolt junk onto it, merge it with another, or dig it up.</div>
     <div class="insp-body" id="insp-body" hidden>
       <div class="insp-head">
         <span class="insp-name" id="insp-name">—</span>
@@ -248,7 +248,7 @@
   <div class="controls">
     <button class="btn" id="restart" type="button">New run</button>
     <button class="btn" id="pause" type="button">Pause</button>
-    <span class="satchel-hint">Click a goblin to pick it up, then click another of the same kind to merge. Esc cancels.</span>
+    <span class="satchel-hint">Click a goblin, then another: same kind raises its rank, different kind gives it that job too. Esc cancels.</span>
   </div>
 
   <section class="notes">
@@ -260,19 +260,22 @@
     </p>
     <ul>
       <li>
-        <strong>Merging costs you power and buys you slots.</strong> Two goblins of matching kind and
-        rank merge into a higher rank inheriting both their junk &mdash; but output grows sub-linearly
-        (&times;1.7 per rank, not &times;2), so a merge is a deliberate <em>loss</em> of raw damage.
-        What it buys is board space and item slots: 2 at rank 1, 4 at rank 2, 6 at rank 3. Deep fusion
-        is only reachable through rank, and rank caps at 4.
-        <span class="q">Is that a real decision, or still just "merge everything"?</span>
+        <strong>Merging goes two ways.</strong> Two goblins of the <em>same</em> kind and rank become a
+        higher rank &mdash; but output grows sub-linearly (&times;1.7, not &times;2), so ranking up is a
+        deliberate loss of raw damage that buys board space and item slots: 2 at rank 1, 4 at rank 2,
+        6 at rank 3, capped at rank 4. Two goblins of <em>different</em> kinds instead make a hybrid
+        that holds both jobs at 70% each &mdash; a Chucker and a Barricade become a Bunker, a wall that
+        shoots. Ten pairings, each with its own name.
+        <span class="q">Is choosing between depth and breadth a real decision?</span>
       </li>
       <li>
         <strong>Every threat ships with its answer, and the answer is never a dice roll.</strong>
-        Two pursuers ignore a static line entirely, and both counters are fusions rather than new
-        cards &mdash; but every item is always buyable at the junk stall, so drops are a discount
-        rather than a gate. A new kind of pursuer is announced during the breather before its first
-        appearance, named alongside the thing that stops it.
+        The Leaper vaults the first goblin it meets unless the lane is spiked, and its counter is a
+        fusion rather than a new card &mdash; but every item is always buyable at the junk stall, so
+        drops are a discount rather than a gate. A new kind of pursuer is announced during the breather
+        before its first appearance, named alongside the thing that stops it. Enemies that bypass your
+        line outright are deliberately held back for deeper chambers, the way PvZ waits until the pool
+        levels to introduce anything that swims past you.
         <span class="q">Does the re-solve loop land, or does it read as unfair?</span>
       </li>
       <li>
@@ -343,7 +346,6 @@
     bees:   { emoji: "🐝", name: "Jar of Bees",     blurb: "three-way shot",       price: 110 },
     torch:  { emoji: "🔥", name: "Guttering Torch", blurb: "sets them alight",     price: 100 },
     spikes: { emoji: "🔱", name: "Bundle of Spikes", blurb: "leapers land on it",  price: 70 },
-    lamp:   { emoji: "🏮", name: "Cracked Lantern", blurb: "drives tunnellers up", price: 70 },
   };
   const ITEM_KEYS = Object.keys(ITEMS);
 
@@ -355,33 +357,58 @@
     ballista:  { name: "Ballista",  cost: 350, hp: 130, tint: "#b07fc9", desc: "Slow. Pierces everything in the lane." },
   };
 
+  // Merging two *different* kinds makes a goblin that does both jobs at 70% each —
+  // 1.4 units of work in one cell, plus a freed cell, in exchange for specialisation.
+  const HYBRID_EFF = 0.7;
+  const MAX_ROLES = 2;
+  const HYBRIDS = {
+    "barricade+chucker":  "Bunker",
+    "chucker+hoarder":    "Tollkeeper",
+    "bomber+chucker":     "Mortar",
+    "ballista+chucker":   "Battery",
+    "barricade+hoarder":  "Strongbox",
+    "bomber+hoarder":     "Piggy Bank",
+    "ballista+hoarder":   "Tithe Engine",
+    "barricade+bomber":   "Powder Keg",
+    "ballista+barricade": "Bastion",
+    "ballista+bomber":    "Siege Mortar",
+  };
+
   const FUSIONS = {
     "chucker|helm": "Tinhead", "chucker|spring": "Windup Chucker",
     "chucker|bees": "Hivechucker", "chucker|torch": "Firechucker",
-    "chucker|spikes": "Caltrop Chucker", "chucker|lamp": "Lamplighter",
+    "chucker|spikes": "Caltrop Chucker",
     "chucker|bees+helm": "Hivehead", "chucker|helm+spring": "Jack-in-the-Helm",
     "chucker|helm+torch": "Furnace", "chucker|bees+spring": "Beegatling",
-    "chucker|spring+torch": "Comet Chucker", "chucker|bees+torch": "Wrath of the Doorknob",
-    "chucker|lamp+torch": "Wickerman", "chucker|spikes+torch": "Brand & Barb",
+    "chucker|spring+torch": "Comet Chucker", "chucker|bees+torch": "Wrath of the Doorknob", "chucker|spikes+torch": "Brand & Barb",
     "barricade|helm": "Bulwark", "barricade|spring": "Springboard",
     "barricade|bees": "Hive Wall", "barricade|torch": "Brazier",
-    "barricade|spikes": "Pike Hedge", "barricade|lamp": "Watchpost",
+    "barricade|spikes": "Pike Hedge",
     "barricade|helm+spikes": "Portcullis", "barricade|spikes+torch": "Burning Hedge",
     "hoarder|helm": "Vault", "hoarder|spring": "Fastfingers",
-    "hoarder|bees": "Beekeeper", "hoarder|torch": "Coinsmelter",
-    "hoarder|lamp": "Nightshift", "hoarder|spikes": "Prickly Miser",
+    "hoarder|bees": "Beekeeper", "hoarder|torch": "Coinsmelter", "hoarder|spikes": "Prickly Miser",
     "bomber|helm": "Heavy Ordnance", "bomber|spring": "Hair Trigger",
     "bomber|bees": "Shrapnel Hive", "bomber|torch": "Wildfire",
     "ballista|torch": "Firelance", "ballista|spring": "Repeating Ballista",
-    "ballista|bees": "Swarmlance", "ballista|helm": "Siege Engine",
-    "ballista|lamp": "Beacon Lance", "ballista|spikes": "Harpoon",
+    "ballista|bees": "Swarmlance", "ballista|helm": "Siege Engine", "ballista|spikes": "Harpoon",
   };
 
+  // A goblin is a *set of jobs*, not one job. One role is a plain unit; two roles is a
+  // hybrid that does both at reduced efficiency.
+  const roleKey = g => [...g.roles].sort().join("+");
+  const has = (g, r) => g.roles.includes(r);
+  const eff = g => (g.roles.length > 1 ? HYBRID_EFF : 1) * RANK_POWER(g.tier);
+  const kindName = g => g.roles.length > 1
+    ? (HYBRIDS[roleKey(g)] || g.roles.map(r => UNITS[r].name).join("-"))
+    : UNITS[g.roles[0]].name;
+
   function baseName(g) {
-    if (!g.items.length) return UNITS[g.type].name;
-    const key = g.type + "|" + [...g.items].sort().join("+");
-    if (FUSIONS[key]) return FUSIONS[key];
-    return ITEMS[g.items[0]].name.split(" ").pop() + " " + UNITS[g.type].name;
+    if (!g.items.length) return kindName(g);
+    if (g.roles.length === 1) {
+      const key = g.roles[0] + "|" + [...g.items].sort().join("+");
+      if (FUSIONS[key]) return FUSIONS[key];
+    }
+    return ITEMS[g.items[0]].name.split(" ").pop() + " " + kindName(g);
   }
   const fullName = g => (baseName(g) + " " + ROMAN[g.tier - 1]).trim();
 
@@ -395,8 +422,6 @@
                 line: "Slow, armoured, chews through walls.", fix: "Raw damage. Merge your Chuckers." },
     leaper:   { name: "Leaper",    pts: 3, weight: 28, from: 2, hp: 120, speed: 26, dps: 20, drop: 0.34,
                 line: "Vaults clean over the first goblin it meets.", fix: "Spikes — it lands on them instead." },
-    tunneller:{ name: "Tunneller", pts: 4, weight: 22, from: 4, hp: 150, speed: 30, dps: 24, drop: 0.38,
-                line: "Burrows past your whole line, untouchable.", fix: "A Lantern drives it up early." },
   };
   const FOE_KEYS = Object.keys(FOES);
 
@@ -438,18 +463,17 @@
   const laneY = r => OY + r * CELL;
   const gobAt = (c, r) => S.goblins.find(g => g.col === c && g.row === r && g.hp > 0);
   const blocked = (c, r) => S.rubble.has(c + "," + r) || S.sealed.has(r);
-  const maxHpOf = g => (UNITS[g.type].hp + (g.items.includes("helm") ? 160 : 0)) * RANK_POWER(g.tier);
+  // A hybrid keeps 60% of both bodies, so Bunker (110 + 560) is tanky but short of a
+  // pure Barricade — you trade peak durability for a cell and a second job.
+  const baseHpOf = g => g.roles.reduce((s, r) => s + UNITS[r].hp, 0) * (g.roles.length > 1 ? 0.6 : 1);
+  const maxHpOf = g => (baseHpOf(g) + (g.items.includes("helm") ? 160 : 0)) * RANK_POWER(g.tier);
+  const costOf = g => g.roles.reduce((s, r) => s + UNITS[r].cost, 0);
 
   function laneHas(row, item) {
     return S.goblins.some(g => g.row === row && g.hp > 0 && g.items.includes(item));
   }
-  // A lantern lights the chamber, not a single row — one per two lanes rather than
-  // one per lane, because five separate lanterns was just tedium.
-  function litFor(row) {
-    return laneHas(row, "lamp") || laneHas(row - 1, "lamp") || laneHas(row + 1, "lamp");
-  }
   // Half of everything sunk into it — a rank-3 body swallowed four units' worth.
-  const refundOf = g => Math.round(UNITS[g.type].cost * 0.5 * Math.pow(2, g.tier - 1));
+  const refundOf = g => Math.round(costOf(g) * 0.5 * Math.pow(2, g.tier - 1));
 
   // ------------------------------------------------------------------ economy
   function income() {
@@ -519,7 +543,7 @@
       type, lane, x: W + 20, hp: d.hp, maxHp: d.hp, wave: S.wave,
       speed: d.speed * rnd(0.77, 1.23),
       burn: 0, burnT: 0, hitT: 0, bleeding: false, bob: rnd(0, 6.28),
-      leapt: false, leapT: 0, under: type === "tunneller", surfacing: 0,
+      leapt: false, leapT: 0,
     });
     S.waveHp += d.hp;
   }
@@ -607,48 +631,51 @@
     for (const g of S.goblins) {
       if (g.hp <= 0) continue;
       const p = cellOf(g);
+      // Each job the goblin holds runs on its own clock, so a hybrid genuinely does
+      // both rather than alternating between them.
       const rate = (g.items.includes("spring") ? 1.6 : 1);
-      g.cd -= dt * rate;
+      const power = eff(g);
+      for (const r of g.roles) g.cds[r] -= dt * rate;
 
-      if (g.type === "chucker" && g.cd <= 0) {
-        const target = S.foes.find(f => f.lane === g.row && f.hp > 0 && !f.under && f.x > p.x - 10);
+      if (has(g, "chucker") && g.cds.chucker <= 0) {
+        const target = S.foes.find(f => f.lane === g.row && f.hp > 0 && f.x > p.x - 10);
         if (target) {
-          g.cd = 1.4;
+          g.cds.chucker = 1.4;
           g.recoil = 0.18;
           const shots = g.items.includes("bees") ? 3 : 1;
           for (let i = 0; i < shots; i++) {
             S.shots.push({
               x: p.x + 58, y: p.y + 48 + (shots > 1 ? (i - 1) * 16 : 0),
               vy: shots > 1 ? (i - 1) * 26 : 0, lane: g.row,
-              dmg: 21 * RANK_POWER(g.tier), fire: g.items.includes("torch"), bee: g.items.includes("bees"),
+              dmg: 21 * power, fire: g.items.includes("torch"), bee: g.items.includes("bees"),
             });
           }
-        } else g.cd = Math.min(g.cd, 0.05);
+        } else g.cds.chucker = Math.min(g.cds.chucker, 0.05);
       }
 
-      if (g.type === "ballista" && g.cd <= 0) {
-        const any = S.foes.some(f => f.lane === g.row && f.hp > 0 && !f.under && f.x > p.x);
+      if (has(g, "ballista") && g.cds.ballista <= 0) {
+        const any = S.foes.some(f => f.lane === g.row && f.hp > 0 && f.x > p.x);
         if (any) {
-          g.cd = 6;
+          g.cds.ballista = 6;
           g.recoil = 0.3;
           S.shots.push({
             x: p.x + 58, y: p.y + 48, vy: 0, lane: g.row,
-            dmg: 130 * RANK_POWER(g.tier), fire: g.items.includes("torch"), pierce: true, big: true,
+            dmg: 130 * power, fire: g.items.includes("torch"), pierce: true, big: true,
           });
-        } else g.cd = Math.min(g.cd, 0.05);
+        } else g.cds.ballista = Math.min(g.cds.ballista, 0.05);
       }
 
-      if (g.type === "hoarder" && g.cd <= 0) {
-        g.cd = rnd(23.5, 25);
+      if (has(g, "hoarder") && g.cds.hoarder <= 0) {
+        g.cds.hoarder = rnd(23.5, 25);
         g.pop = 0.4;
-        addCoins(25 * RANK_POWER(g.tier), p.x + 48, p.y + 40);
+        addCoins(25 * power, p.x + 48, p.y + 40);
       }
 
-      if (g.type === "bomber") {
-        const near = S.foes.find(f => f.lane === g.row && f.hp > 0 && !f.under && f.x < p.x + 150 && f.x > p.x - 60);
+      if (has(g, "bomber")) {
+        const near = S.foes.find(f => f.lane === g.row && f.hp > 0 && f.x < p.x + 150 && f.x > p.x - 60);
         if (near) {
           for (const f of S.foes) {
-            if (f.lane === g.row && !f.under && Math.abs(f.x - p.x) < 170) hurt(f, 240 * RANK_POWER(g.tier), g.items.includes("torch"));
+            if (f.lane === g.row && Math.abs(f.x - p.x) < 170) hurt(f, 240 * power, g.items.includes("torch"));
           }
           S.puffs.push({ x: p.x + 48, y: p.y + 48, t: 0, r: 170, kind: "boom" });
           g.hp = 0;
@@ -667,7 +694,7 @@
       s.x += (s.big ? 620 : 300) * dt;
       s.y += s.vy * dt;
       for (const f of S.foes) {
-        if (f.lane !== s.lane || f.hp <= 0 || f.under) continue;
+        if (f.lane !== s.lane || f.hp <= 0) continue;
         if (Math.abs(f.x - s.x) >= (s.big ? 26 : 22)) continue;
         if (s.hitSet && s.hitSet.has(f)) continue;
         hurt(f, s.dmg, s.fire);
@@ -695,19 +722,6 @@
         S.puffs.push({ x: f.x, y: laneY(f.lane) + 26, t: 0, r: 26, kind: "steal" });
       }
       if (f.bleeding) f.hp -= (f.maxHp >= 300 ? 30 : 12) * dt;
-
-      // Tunneller: untouchable underground. A Lantern anywhere in the lane drives it up.
-      if (f.under) {
-        f.x -= f.speed * S.speedMul * dt;
-        if (f.x < OX + 130 || litFor(f.lane)) {
-          f.under = false;
-          f.surfacing = 0.4;
-          S.puffs.push({ x: f.x, y: laneY(f.lane) + 56, t: 0, r: 54, kind: "poof" });
-        }
-        if (f.x <= HOARD_X) breach(f);
-        continue;
-      }
-      if (f.surfacing > 0) { f.surfacing -= dt; continue; }
 
       if (f.leapT > 0) {            // mid-vault, sailing over the line
         f.leapT -= dt;
@@ -780,7 +794,6 @@
   }
 
   function hurt(f, dmg, fire) {
-    if (f.under) return;
     f.hp -= dmg;
     f.hitT = 0.1;
     if (fire) f.burn = Math.max(f.burn, 6);
@@ -793,11 +806,11 @@
   function drawGoblin(g) {
     const p = cellOf(g);
     const cxp = p.x + 48, cyp = p.y + 56;
-    const u = UNITS[g.type];
+    const tint = blendTints(g.roles);
     const squash = g.pop > 0 ? 1 + g.pop * 0.3 : 1;
     const lean = g.recoil > 0 ? -g.recoil * 40 : 0;
     const grow = 1 + (g.tier - 1) * 0.13;
-    const big = g.type === "barricade";
+    const big = has(g, "barricade");
     const rw = (big ? 34 : 26) * squash * grow, rh = (big ? 36 : 28) * squash * grow;
 
     if (S.selGob === g) {
@@ -811,7 +824,7 @@
     cx.translate(cxp + lean, cyp);
     if (g.hurtT > 0) cx.globalAlpha = 0.75;
 
-    cx.fillStyle = u.tint;
+    cx.fillStyle = tint;
     cx.beginPath();
     cx.moveTo(-rw + 3, -6); cx.lineTo(-rw - 15, -20); cx.lineTo(-rw - 2, 4); cx.closePath(); cx.fill();
     cx.beginPath();
@@ -826,7 +839,7 @@
     cx.beginPath(); cx.ellipse(-9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
     cx.beginPath(); cx.ellipse(9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
     cx.fillStyle = "#14110f";
-    const look = g.type === "hoarder" ? -2 : 2;
+    const look = has(g, "hoarder") ? -2 : 2;
     cx.beginPath(); cx.arc(-9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
     cx.beginPath(); cx.arc(9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
 
@@ -852,7 +865,7 @@
       cx.fillStyle = "rgba(0,0,0,0.55)"; cx.fillRect(cxp - w / 2, p.y + 84, w, 5);
       cx.fillStyle = fr > 0.4 ? "#6fbf5b" : "#d1553f"; cx.fillRect(cxp - w / 2, p.y + 84, w * fr, 5);
     }
-    if (g.items.length || g.tier > 1) {
+    if (g.items.length || g.tier > 1 || g.roles.length > 1) {
       cx.font = (g.tier > 1 ? "bold " : "") + "10px 'Trebuchet MS', sans-serif";
       cx.fillStyle = g.tier > 1 ? "#f0d68a" : "#e8c05a";
       cx.textAlign = "center";
@@ -864,45 +877,8 @@
     const y = laneY(f.lane) + 54;
     const bob = Math.sin(f.bob) * 2;
 
-    if (f.under) {
-      // Playtesters reported tunnellers "not appearing" — they were spawning fine and
-      // simply could not be seen. A travelling mound now gets a heaving hump, thrown
-      // dirt and a warning flag, so it reads at a glance even on a phone.
-      const heave = Math.sin(S.t * 9 + f.bob) * 4;
-      cx.fillStyle = "rgba(209,85,63,0.10)";
-      cx.fillRect(f.x - 46, y - 34, 92, 92);
-
-      cx.fillStyle = "#241d22";
-      cx.beginPath(); cx.ellipse(f.x, y + 30, 34, 11, 0, 0, 6.284); cx.fill();
-      cx.fillStyle = "#6b5a52";
-      cx.beginPath();
-      cx.moveTo(f.x - 30, y + 30);
-      cx.quadraticCurveTo(f.x, y - 4 + heave, f.x + 30, y + 30);
-      cx.closePath(); cx.fill();
-      cx.fillStyle = "#8a7768";
-      cx.beginPath();
-      cx.moveTo(f.x - 18, y + 30);
-      cx.quadraticCurveTo(f.x - 2, y + 6 + heave, f.x + 14, y + 30);
-      cx.closePath(); cx.fill();
-
-      for (let i = 0; i < 5; i++) {                     // spray of thrown dirt
-        const a = (S.t * 2.2 + i * 1.7 + f.bob) % 1;
-        cx.globalAlpha = 1 - a;
-        cx.fillStyle = "#9a8778";
-        cx.beginPath();
-        cx.arc(f.x + 16 + a * 30, y + 26 - a * 30, 3.4 - a * 2, 0, 6.284);
-        cx.fill();
-      }
-      cx.globalAlpha = 1;
-
-      cx.font = "bold 13px 'Trebuchet MS', sans-serif";
-      cx.fillStyle = "#e0897a"; cx.textAlign = "center";
-      cx.fillText("▼ TUNNELLING", f.x, y - 14);
-      return;
-    }
-
     const tint = f.type === "scout" ? "#6d6475" : f.type === "knight" ? "#aab2c0"
-               : f.type === "leaper" ? "#bda66f" : f.type === "tunneller" ? "#8f7f6a" : "#c9ced8";
+               : f.type === "leaper" ? "#bda66f" : "#c9ced8";
     const scale = f.type === "knight" ? 1.22 : f.type === "scout" ? 0.9 : 1;
     const lift = f.leapT > 0 ? -Math.sin((0.45 - f.leapT) / 0.45 * Math.PI) * 52 : 0;
 
@@ -1190,8 +1166,8 @@
       if (S.coins >= u.cost) {
         S.coins -= u.cost;
         const warm = S.selUnit === "hoarder" ? rnd(3, 12.5) : 0.6;
-        S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, tier: 1, cd: warm,
-                         items: [], pop: 0, recoil: 0, hurtT: 0 });
+        S.goblins.push({ roles: [S.selUnit], col, row, hp: u.hp, tier: 1,
+                         cds: { [S.selUnit]: warm }, items: [], pop: 0, recoil: 0, hurtT: 0 });
         // Deselect after placing, as PvZ does — otherwise a sticky selection makes
         // clicking a goblin to merge impossible without hitting Escape first.
         S.selUnit = null;
@@ -1204,16 +1180,28 @@
     if (occ) {
       if (!S.selGob) { S.selGob = occ; return; }
       if (S.selGob === occ) { S.selGob = null; return; }
-      if (occ.type === S.selGob.type && occ.tier === S.selGob.tier && occ.tier < MAX_TIER) {
-        const from = S.selGob;
-        occ.tier++;
+      const from = S.selGob;
+      const sameKind = roleKey(occ) === roleKey(from);
+      const union = [...new Set([...occ.roles, ...from.roles])];
+      const canRank = sameKind && occ.tier === from.tier && occ.tier < MAX_TIER;
+      const canHybrid = !sameKind && occ.tier === from.tier && union.length <= MAX_ROLES;
+
+      if (canRank || canHybrid) {
+        if (canRank) occ.tier++;
+        else {
+          // Cross-kind: keep the rank, gain the other's job. Cooldowns start ready so
+          // the new half doesn't sit idle for a full cycle.
+          occ.roles = union;
+          for (const r of union) if (occ.cds[r] === undefined) occ.cds[r] = 0.6;
+        }
         for (const k of from.items) {
           if (!occ.items.includes(k) && occ.items.length < RANK_SLOTS(occ.tier)) occ.items.push(k);
         }
         occ.hp = maxHpOf(occ);
         S.goblins = S.goblins.filter(g => g !== from);
-        S.selGob = null;
+        S.selGob = occ;
         S.puffs.push({ x: cellOf(occ).x + 48, y: cellOf(occ).y + 48, t: 0, r: 70, kind: "boom" });
+        renderInspector();
       } else {
         S.selGob = occ;
       }
@@ -1271,21 +1259,28 @@
 
   // What a given piece of junk actually does on a given goblin, in words. The emoji
   // alone told nobody anything, and a title attribute is invisible on a phone.
-  function effectOf(key, type) {
+  function effectOf(key, g) {
+    const shoots = has(g, "chucker") || has(g, "ballista") || has(g, "bomber");
     switch (key) {
       case "helm":   return "+160 max health, scaled by rank";
-      case "spring": return type === "hoarder" ? "Fetches coins 1.6× as often"
-                          : type === "barricade" ? "Knocks attackers back"
-                          : "Attacks 1.6× as often";
-      case "bees":   return type === "chucker" ? "Throws a three-way spread" : null;
-      case "torch":  return type === "barricade" ? "Burns whatever attacks it"
-                          : type === "hoarder" ? null
-                          : "Sets them alight — burn damage over time";
+      case "spring": return "Acts 1.6× as often — every job it holds"
+                          + (has(g, "barricade") ? ", and knocks attackers back" : "");
+      case "bees":   return has(g, "chucker") ? "Throws a three-way spread" : null;
+      case "torch":  return has(g, "barricade") ? "Burns whatever attacks it"
+                          : shoots ? "Sets them alight — burn damage over time" : null;
       case "spikes": return "Leapers in this lane land on it for 90, instead of vaulting"
-                          + (type === "barricade" ? "; also cuts attackers" : "");
-      case "lamp":   return "Drives tunnellers up in this lane and both neighbours";
+                          + (has(g, "barricade") ? "; also cuts attackers" : "");
       default:       return null;
     }
+  }
+
+  // Two roles average their colours, so a hybrid reads as its own thing on the board.
+  function blendTints(roles) {
+    if (roles.length === 1) return UNITS[roles[0]].tint;
+    const rgb = roles.map(r => UNITS[r].tint)
+      .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
+    const avg = [0, 1, 2].map(i => Math.round(rgb.reduce((s, c) => s + c[i], 0) / rgb.length));
+    return "#" + avg.map(v => v.toString(16).padStart(2, "0")).join("");
   }
 
   const inspEmpty = document.getElementById("insp-empty");
@@ -1308,27 +1303,44 @@
     inspMeta.textContent =
       "rank " + g.tier + (g.tier < MAX_TIER ? "" : " (max)") +
       " · " + Math.round(g.hp) + "/" + Math.round(maxHpOf(g)) + " hp" +
-      " · ×" + RANK_POWER(g.tier).toFixed(1) + " output" +
+      " · ×" + eff(g).toFixed(2) + " output" +
       " · junk " + g.items.length + "/" + slots;
 
     inspItems.innerHTML = "";
+    // Spell the jobs out — a hybrid's name alone doesn't say what it actually does.
+    for (const r of g.roles) {
+      const li = document.createElement("li");
+      li.innerHTML = '<span class="insp-em">•</span>' +
+                     '<span class="insp-what">' + UNITS[r].name + " job</span>" +
+                     '<span class="insp-does">' + UNITS[r].desc + "</span>";
+      inspItems.appendChild(li);
+    }
+    if (g.roles.length > 1) {
+      const li = document.createElement("li");
+      li.className = "insp-free";
+      li.textContent = "Two jobs, each at " + Math.round(HYBRID_EFF * 100) +
+                       "% — 1.4 goblins of work in one cell.";
+      inspItems.appendChild(li);
+    }
     for (const k of g.items) {
-      const does = effectOf(k, g.type);
+      const does = effectOf(k, g);
       const li = document.createElement("li");
       li.innerHTML = '<span class="insp-em">' + ITEMS[k].emoji + "</span>" +
                      '<span class="insp-what">' + ITEMS[k].name + "</span>" +
                      '<span class="insp-does' + (does ? "" : " nil") + '">' +
-                       (does || "Does nothing on a " + UNITS[g.type].name) + "</span>";
+                       (does || "Does nothing on a " + kindName(g)) + "</span>";
       inspItems.appendChild(li);
     }
     const li = document.createElement("li");
     li.className = "insp-free";
     const moreSlots = g.tier < MAX_TIER && RANK_SLOTS(g.tier + 1) > slots;
-    li.textContent = g.items.length < slots
+    li.textContent = g.roles.length < MAX_ROLES && g.items.length >= slots && !moreSlots
+      ? "Full. Merge with a different kind of goblin to gain its job."
+      : g.items.length < slots
       ? (slots - g.items.length) + " slot" + (slots - g.items.length === 1 ? "" : "s") + " free" +
         (moreSlots ? " — merge to rank " + (g.tier + 1) + " for " + RANK_SLOTS(g.tier + 1) : "")
       : moreSlots
-        ? "Full. Merge with another rank-" + g.tier + " " + UNITS[g.type].name +
+        ? "Full. Merge with another rank-" + g.tier + " " + kindName(g) +
           " for " + RANK_SLOTS(g.tier + 1) + " slots."
         : g.tier < MAX_TIER
           ? "Full. Merging raises output to ×" + RANK_POWER(g.tier + 1).toFixed(1) + ", but adds no slots."
@@ -1347,7 +1359,7 @@
   });
 
   const stallEl = document.getElementById("stall");
-  const COUNTERS = new Set(["spikes", "lamp"]);
+  const COUNTERS = new Set(["spikes"]);
   function renderStall() {
     stallEl.innerHTML = "";
     for (const k of ITEM_KEYS) {
