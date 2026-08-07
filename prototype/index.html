@@ -138,6 +138,26 @@
   .slot[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
   .satchel-hint { font-size: 12px; color: var(--ink-dim); font-style: italic; }
 
+  .inspector { border: 1px solid #3b3340; border-radius: 3px; padding: 11px 13px;
+               background: linear-gradient(180deg, var(--stone-lit), var(--stone)); }
+  .insp-empty { font-size: 12.5px; color: var(--ink-dim); font-style: italic; }
+  .insp-body { display: flex; flex-direction: column; gap: 9px; }
+  .insp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .insp-name { font-family: var(--display); font-size: 21px; letter-spacing: 0.03em;
+               text-transform: uppercase; color: var(--gold); }
+  .insp-meta { font-family: var(--data); font-size: 12px; color: var(--ink-dim);
+               font-variant-numeric: tabular-nums; }
+  .insp-items { list-style: none; margin: 0; padding: 0; display: flex;
+                flex-direction: column; gap: 5px; }
+  .insp-items li { display: flex; gap: 9px; align-items: baseline; font-size: 13px; }
+  .insp-em { font-size: 16px; }
+  .insp-what { color: var(--ink); min-width: 118px; }
+  .insp-does { color: var(--goblin); }
+  .insp-does.nil { color: #7d7285; font-style: italic; }
+  .insp-free { font-size: 12.5px; color: var(--ink-dim); font-style: italic; }
+  .btn.danger { border-color: #6b3a35; color: #e0897a; margin-left: auto; }
+  .btn.danger:hover { border-color: var(--alarm); color: #ffb3a3; }
+
   .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .btn { font-family: var(--body); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
          background: transparent; color: var(--ink-dim); border: 1px solid #443b49;
@@ -169,7 +189,7 @@
 
   <header class="masthead">
     <h1 class="wordmark">Hoard</h1>
-    <span class="kicker">descent prototype &middot; v0.4</span>
+    <span class="kicker">descent prototype &middot; v0.6</span>
   </header>
 
   <div class="hud">
@@ -202,6 +222,18 @@
 
   <div class="rack" id="rack"></div>
 
+  <div class="inspector" id="inspector">
+    <div class="insp-empty" id="insp-empty">Tap a goblin on the board to inspect it, bolt junk onto it, merge it, or dig it up.</div>
+    <div class="insp-body" id="insp-body" hidden>
+      <div class="insp-head">
+        <span class="insp-name" id="insp-name">—</span>
+        <span class="insp-meta" id="insp-meta"></span>
+        <button class="btn danger" id="insp-remove" type="button">Dig up</button>
+      </div>
+      <ul class="insp-items" id="insp-items"></ul>
+    </div>
+  </div>
+
   <div class="stall">
     <span class="satchel-label">Junk stall</span>
     <div id="stall" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
@@ -228,10 +260,12 @@
     </p>
     <ul>
       <li>
-        <strong>Merging is the whole mid-game now.</strong> Goblins hold six items, not two, and two
-        goblins of the same kind and rank merge into a higher rank that inherits both their junk. Your
-        board is never finished &mdash; once it is built, you keep folding it into itself.
-        <span class="q">Does going wide on fusion carry the back half of a run?</span>
+        <strong>Merging costs you power and buys you slots.</strong> Two goblins of matching kind and
+        rank merge into a higher rank inheriting both their junk &mdash; but output grows sub-linearly
+        (&times;1.7 per rank, not &times;2), so a merge is a deliberate <em>loss</em> of raw damage.
+        What it buys is board space and item slots: 2 at rank 1, 4 at rank 2, 6 at rank 3. Deep fusion
+        is only reachable through rank, and rank caps at 4.
+        <span class="q">Is that a real decision, or still just "merge everything"?</span>
       </li>
       <li>
         <strong>Every threat ships with its answer, and the answer is never a dice roll.</strong>
@@ -279,7 +313,16 @@
   const SKY_RATE = 4.5;          // coins/sec at the top of the run…
   const SKY_FLOOR = 0.45;        // …decaying to this share, as sky sun does over a level
   const MAX_ITEMS = 6;
+  const MAX_TIER = 4;
   const WAVES_PER_CHAMBER = 5;
+
+  // Merging used to be strictly better than not merging: two bodies became one with
+  // double the output and a free cell, so the play was always "spam the cheapest unit
+  // and merge forever". Power now grows sub-linearly, so merging *costs* you ~15% of
+  // your raw output. What you buy with that is board space and, above all, item slots —
+  // deep fusion is only reachable through rank.
+  const RANK_POWER = t => Math.pow(1.7, t - 1);   // 1 · 1.7 · 2.9 · 4.9
+  const RANK_SLOTS = t => Math.min(2 + (t - 1) * 2, MAX_ITEMS);   // 2 · 4 · 6 · 6
 
   // Board.as constants
   const WAVE_TIMER_MIN = 25, WAVE_TIMER_MAX = 31;
@@ -395,11 +438,18 @@
   const laneY = r => OY + r * CELL;
   const gobAt = (c, r) => S.goblins.find(g => g.col === c && g.row === r && g.hp > 0);
   const blocked = (c, r) => S.rubble.has(c + "," + r) || S.sealed.has(r);
-  const maxHpOf = g => (UNITS[g.type].hp + (g.items.includes("helm") ? 160 : 0)) * g.tier;
+  const maxHpOf = g => (UNITS[g.type].hp + (g.items.includes("helm") ? 160 : 0)) * RANK_POWER(g.tier);
 
   function laneHas(row, item) {
     return S.goblins.some(g => g.row === row && g.hp > 0 && g.items.includes(item));
   }
+  // A lantern lights the chamber, not a single row — one per two lanes rather than
+  // one per lane, because five separate lanterns was just tedium.
+  function litFor(row) {
+    return laneHas(row, "lamp") || laneHas(row - 1, "lamp") || laneHas(row + 1, "lamp");
+  }
+  // Half of everything sunk into it — a rank-3 body swallowed four units' worth.
+  const refundOf = g => Math.round(UNITS[g.type].cost * 0.5 * Math.pow(2, g.tier - 1));
 
   // ------------------------------------------------------------------ economy
   function income() {
@@ -519,7 +569,7 @@
     // rubble or sealing can strand goblins — refund them rather than delete silently
     S.goblins = S.goblins.filter(g => {
       if (!blocked(g.col, g.row)) return true;
-      addCoins(Math.round(UNITS[g.type].cost * 0.5 * g.tier), cellOf(g).x + 48, cellOf(g).y + 40);
+      addCoins(refundOf(g), cellOf(g).x + 48, cellOf(g).y + 40);
       return false;
     });
     S.traps = S.traps.map((t, r) => S.sealed.has(r) ? false : t);
@@ -570,7 +620,7 @@
             S.shots.push({
               x: p.x + 58, y: p.y + 48 + (shots > 1 ? (i - 1) * 16 : 0),
               vy: shots > 1 ? (i - 1) * 26 : 0, lane: g.row,
-              dmg: 21 * g.tier, fire: g.items.includes("torch"), bee: g.items.includes("bees"),
+              dmg: 21 * RANK_POWER(g.tier), fire: g.items.includes("torch"), bee: g.items.includes("bees"),
             });
           }
         } else g.cd = Math.min(g.cd, 0.05);
@@ -583,7 +633,7 @@
           g.recoil = 0.3;
           S.shots.push({
             x: p.x + 58, y: p.y + 48, vy: 0, lane: g.row,
-            dmg: 130 * g.tier, fire: g.items.includes("torch"), pierce: true, big: true,
+            dmg: 130 * RANK_POWER(g.tier), fire: g.items.includes("torch"), pierce: true, big: true,
           });
         } else g.cd = Math.min(g.cd, 0.05);
       }
@@ -591,14 +641,14 @@
       if (g.type === "hoarder" && g.cd <= 0) {
         g.cd = rnd(23.5, 25);
         g.pop = 0.4;
-        addCoins(25 * g.tier, p.x + 48, p.y + 40);
+        addCoins(25 * RANK_POWER(g.tier), p.x + 48, p.y + 40);
       }
 
       if (g.type === "bomber") {
         const near = S.foes.find(f => f.lane === g.row && f.hp > 0 && !f.under && f.x < p.x + 150 && f.x > p.x - 60);
         if (near) {
           for (const f of S.foes) {
-            if (f.lane === g.row && !f.under && Math.abs(f.x - p.x) < 170) hurt(f, 240 * g.tier, g.items.includes("torch"));
+            if (f.lane === g.row && !f.under && Math.abs(f.x - p.x) < 170) hurt(f, 240 * RANK_POWER(g.tier), g.items.includes("torch"));
           }
           S.puffs.push({ x: p.x + 48, y: p.y + 48, t: 0, r: 170, kind: "boom" });
           g.hp = 0;
@@ -649,7 +699,7 @@
       // Tunneller: untouchable underground. A Lantern anywhere in the lane drives it up.
       if (f.under) {
         f.x -= f.speed * S.speedMul * dt;
-        if (f.x < OX + 130 || laneHas(f.lane, "lamp")) {
+        if (f.x < OX + 130 || litFor(f.lane)) {
           f.under = false;
           f.surfacing = 0.4;
           S.puffs.push({ x: f.x, y: laneY(f.lane) + 56, t: 0, r: 54, kind: "poof" });
@@ -814,13 +864,40 @@
     const y = laneY(f.lane) + 54;
     const bob = Math.sin(f.bob) * 2;
 
-    if (f.under) {          // a travelling mound of dirt, and nothing to shoot
-      cx.fillStyle = "#3a3038";
-      cx.beginPath(); cx.ellipse(f.x, y + 26, 22, 8, 0, 0, 6.284); cx.fill();
-      cx.fillStyle = "#4a3f48";
-      cx.beginPath(); cx.arc(f.x, y + 26, 11, Math.PI, 0); cx.fill();
-      cx.font = "11px 'Trebuchet MS', sans-serif"; cx.fillStyle = "#7d7285"; cx.textAlign = "center";
-      cx.fillText("under", f.x, y + 44);
+    if (f.under) {
+      // Playtesters reported tunnellers "not appearing" — they were spawning fine and
+      // simply could not be seen. A travelling mound now gets a heaving hump, thrown
+      // dirt and a warning flag, so it reads at a glance even on a phone.
+      const heave = Math.sin(S.t * 9 + f.bob) * 4;
+      cx.fillStyle = "rgba(209,85,63,0.10)";
+      cx.fillRect(f.x - 46, y - 34, 92, 92);
+
+      cx.fillStyle = "#241d22";
+      cx.beginPath(); cx.ellipse(f.x, y + 30, 34, 11, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "#6b5a52";
+      cx.beginPath();
+      cx.moveTo(f.x - 30, y + 30);
+      cx.quadraticCurveTo(f.x, y - 4 + heave, f.x + 30, y + 30);
+      cx.closePath(); cx.fill();
+      cx.fillStyle = "#8a7768";
+      cx.beginPath();
+      cx.moveTo(f.x - 18, y + 30);
+      cx.quadraticCurveTo(f.x - 2, y + 6 + heave, f.x + 14, y + 30);
+      cx.closePath(); cx.fill();
+
+      for (let i = 0; i < 5; i++) {                     // spray of thrown dirt
+        const a = (S.t * 2.2 + i * 1.7 + f.bob) % 1;
+        cx.globalAlpha = 1 - a;
+        cx.fillStyle = "#9a8778";
+        cx.beginPath();
+        cx.arc(f.x + 16 + a * 30, y + 26 - a * 30, 3.4 - a * 2, 0, 6.284);
+        cx.fill();
+      }
+      cx.globalAlpha = 1;
+
+      cx.font = "bold 13px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = "#e0897a"; cx.textAlign = "center";
+      cx.fillText("▼ TUNNELLING", f.x, y - 14);
       return;
     }
 
@@ -1070,6 +1147,7 @@
   cv.addEventListener("click", ev => {
     if (S.over) { newRun(); renderAll(); return; }
     if (S.choosing) return;
+    if (S.paused) return;      // pause was a free planning phase; it isn't any more
     const p = toBoard(ev);
 
     const j = S.junk.find(j => Math.hypot(j.x - p.x, j.y - p.y) < 34);
@@ -1085,14 +1163,21 @@
     const occ = gobAt(col, row);
 
     if (S.selItem !== null) {
-      if (occ && occ.items.length < MAX_ITEMS) {
+      if (occ) {
         const key = S.satchel[S.selItem];
-        if (!occ.items.includes(key)) {
+        const full = occ.items.length >= RANK_SLOTS(occ.tier);
+        if (!full && !occ.items.includes(key)) {
           occ.items.push(key);
-          if (key === "helm") occ.hp += 160 * occ.tier;
+          if (key === "helm") occ.hp += 160 * RANK_POWER(occ.tier);
           S.satchel.splice(S.selItem, 1);
           S.selItem = null;
           renderSlots();
+        } else {
+          // Full, or already carrying this. Silently doing nothing just confuses —
+          // hand the goblin to the inspector so it can say why.
+          S.selItem = null;
+          S.selGob = occ;
+          renderSlots(); renderInspector();
         }
       }
       return;
@@ -1119,11 +1204,11 @@
     if (occ) {
       if (!S.selGob) { S.selGob = occ; return; }
       if (S.selGob === occ) { S.selGob = null; return; }
-      if (occ.type === S.selGob.type && occ.tier === S.selGob.tier) {
+      if (occ.type === S.selGob.type && occ.tier === S.selGob.tier && occ.tier < MAX_TIER) {
         const from = S.selGob;
         occ.tier++;
         for (const k of from.items) {
-          if (!occ.items.includes(k) && occ.items.length < MAX_ITEMS) occ.items.push(k);
+          if (!occ.items.includes(k) && occ.items.length < RANK_SLOTS(occ.tier)) occ.items.push(k);
         }
         occ.hp = maxHpOf(occ);
         S.goblins = S.goblins.filter(g => g !== from);
@@ -1184,6 +1269,83 @@
         : "Junk drops when pursuers die. Click it to pick it up, then click a goblin to bolt it on.";
   }
 
+  // What a given piece of junk actually does on a given goblin, in words. The emoji
+  // alone told nobody anything, and a title attribute is invisible on a phone.
+  function effectOf(key, type) {
+    switch (key) {
+      case "helm":   return "+160 max health, scaled by rank";
+      case "spring": return type === "hoarder" ? "Fetches coins 1.6× as often"
+                          : type === "barricade" ? "Knocks attackers back"
+                          : "Attacks 1.6× as often";
+      case "bees":   return type === "chucker" ? "Throws a three-way spread" : null;
+      case "torch":  return type === "barricade" ? "Burns whatever attacks it"
+                          : type === "hoarder" ? null
+                          : "Sets them alight — burn damage over time";
+      case "spikes": return "Leapers in this lane land on it for 90, instead of vaulting"
+                          + (type === "barricade" ? "; also cuts attackers" : "");
+      case "lamp":   return "Drives tunnellers up in this lane and both neighbours";
+      default:       return null;
+    }
+  }
+
+  const inspEmpty = document.getElementById("insp-empty");
+  const inspBody = document.getElementById("insp-body");
+  const inspName = document.getElementById("insp-name");
+  const inspMeta = document.getElementById("insp-meta");
+  const inspItems = document.getElementById("insp-items");
+
+  function renderInspector() {
+    const g = S.selGob;
+    if (!g || g.hp <= 0) {
+      inspEmpty.hidden = false;
+      inspBody.hidden = true;
+      return;
+    }
+    inspEmpty.hidden = true;
+    inspBody.hidden = false;
+    inspName.textContent = fullName(g);
+    const slots = RANK_SLOTS(g.tier);
+    inspMeta.textContent =
+      "rank " + g.tier + (g.tier < MAX_TIER ? "" : " (max)") +
+      " · " + Math.round(g.hp) + "/" + Math.round(maxHpOf(g)) + " hp" +
+      " · ×" + RANK_POWER(g.tier).toFixed(1) + " output" +
+      " · junk " + g.items.length + "/" + slots;
+
+    inspItems.innerHTML = "";
+    for (const k of g.items) {
+      const does = effectOf(k, g.type);
+      const li = document.createElement("li");
+      li.innerHTML = '<span class="insp-em">' + ITEMS[k].emoji + "</span>" +
+                     '<span class="insp-what">' + ITEMS[k].name + "</span>" +
+                     '<span class="insp-does' + (does ? "" : " nil") + '">' +
+                       (does || "Does nothing on a " + UNITS[g.type].name) + "</span>";
+      inspItems.appendChild(li);
+    }
+    const li = document.createElement("li");
+    li.className = "insp-free";
+    const moreSlots = g.tier < MAX_TIER && RANK_SLOTS(g.tier + 1) > slots;
+    li.textContent = g.items.length < slots
+      ? (slots - g.items.length) + " slot" + (slots - g.items.length === 1 ? "" : "s") + " free" +
+        (moreSlots ? " — merge to rank " + (g.tier + 1) + " for " + RANK_SLOTS(g.tier + 1) : "")
+      : moreSlots
+        ? "Full. Merge with another rank-" + g.tier + " " + UNITS[g.type].name +
+          " for " + RANK_SLOTS(g.tier + 1) + " slots."
+        : g.tier < MAX_TIER
+          ? "Full. Merging raises output to ×" + RANK_POWER(g.tier + 1).toFixed(1) + ", but adds no slots."
+          : "Full, and at maximum rank.";
+    inspItems.appendChild(li);
+  }
+
+  document.getElementById("insp-remove").addEventListener("click", () => {
+    const g = S.selGob;
+    if (!g) return;
+    const back = refundOf(g);
+    addCoins(back, cellOf(g).x + 48, cellOf(g).y + 40);
+    S.goblins = S.goblins.filter(x => x !== g);
+    S.selGob = null;
+    renderInspector();
+  });
+
   const stallEl = document.getElementById("stall");
   const COUNTERS = new Set(["spikes", "lamp"]);
   function renderStall() {
@@ -1196,7 +1358,8 @@
       b.disabled = S.coins < it.price || S.satchel.length >= 10;
       b.title = it.name + " — " + it.blurb;
       b.innerHTML = '<span class="buy-em">' + it.emoji + "</span>" +
-                    "<span>" + it.name + "</span>" +
+                    "<span>" + it.name + "<br><span style='color:#9a9089;font-size:11px'>" +
+                      it.blurb + "</span></span>" +
                     '<span class="buy-price">' + it.price + "</span>";
       b.addEventListener("click", () => {
         if (S.coins < it.price || S.satchel.length >= 10) return;
@@ -1241,7 +1404,7 @@
   const elChamber = document.getElementById("hud-chamber");
   const elStatus = document.getElementById("hud-status");
 
-  function renderAll() { renderRack(); renderSlots(); renderStall(); renderHazards(); }
+  function renderAll() { renderRack(); renderSlots(); renderStall(); renderHazards(); renderInspector(); }
 
   document.getElementById("restart").addEventListener("click", () => {
     document.getElementById("descent").classList.remove("on");
@@ -1254,7 +1417,7 @@
   });
 
   // ------------------------------------------------------------------ loop
-  let last = performance.now(), affordSig = null;
+  let last = performance.now(), affordSig = null, inspSig = null;
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
@@ -1276,6 +1439,10 @@
                 ITEM_KEYS.map(k => S.coins >= ITEMS[k].price).join("");
     if (sig !== affordSig) { affordSig = sig; renderRack(); renderStall(); }
 
+    const g = S.selGob;
+    const isig = g && g.hp > 0 ? g.type + g.tier + g.items.join() + Math.round(g.hp) : "none";
+    if (isig !== inspSig) { inspSig = isig; renderInspector(); }
+
     requestAnimationFrame(frame);
   }
 
@@ -1287,6 +1454,11 @@
     get state() { return S; },
     descend: offerDescent,
     skipTo(n) { S.wave = n; S.queue = []; S.foes = []; S.phase = "breather"; S.phaseT = 1; },
+    previewWave(n) {
+      const q = buildWave(n), c = {};
+      for (const e of q) c[e.type] = (c[e.type] || 0) + 1;
+      return { total: q.length, mix: c };
+    },
   };
 
   renderAll();
