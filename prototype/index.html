@@ -114,8 +114,21 @@
   .card-cost { font-family: var(--data); font-size: 12px; color: var(--gold); font-variant-numeric: tabular-nums; }
   .card-desc { font-size: 11.5px; color: var(--ink-dim); line-height: 1.35; }
 
-  .satchel { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-             border: 1px dashed #443b49; border-radius: 3px; padding: 9px 12px; }
+  .satchel, .stall { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                     border: 1px dashed #443b49; border-radius: 3px; padding: 9px 12px; }
+  .stall { border-style: solid; border-color: #3b3340;
+           background: linear-gradient(180deg, var(--stone-lit), var(--stone)); }
+  .buy { display: flex; align-items: center; gap: 6px;
+         background: var(--stone); border: 1px solid #3b3340; border-radius: 3px;
+         padding: 5px 10px; cursor: pointer; color: var(--ink); font-family: var(--body);
+         font-size: 12.5px; transition: transform .12s ease, border-color .12s ease; }
+  .buy:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--gold-dim); }
+  .buy:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .buy:disabled { opacity: 0.38; cursor: not-allowed; }
+  .buy-em { font-size: 17px; line-height: 1; }
+  .buy-price { font-family: var(--data); font-size: 11.5px; color: var(--gold);
+               font-variant-numeric: tabular-nums; }
+  .buy.counter { border-left: 3px solid var(--goblin); }
   .satchel-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-dim); }
   .slot { font-size: 19px; line-height: 1; background: var(--stone);
           border: 1px solid #3b3340; border-radius: 3px; padding: 5px 8px;
@@ -189,6 +202,11 @@
 
   <div class="rack" id="rack"></div>
 
+  <div class="stall">
+    <span class="satchel-label">Junk stall</span>
+    <div id="stall" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+  </div>
+
   <div class="satchel">
     <span class="satchel-label">Satchel</span>
     <div id="slots" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
@@ -216,9 +234,11 @@
         <span class="q">Does going wide on fusion carry the back half of a run?</span>
       </li>
       <li>
-        <strong>Every threat ships with its answer.</strong> Two new pursuers ignore a static line
-        entirely, and both counters are fusions rather than new cards, so a new threat pushes you
-        further into merging instead of just widening the shop.
+        <strong>Every threat ships with its answer, and the answer is never a dice roll.</strong>
+        Two pursuers ignore a static line entirely, and both counters are fusions rather than new
+        cards &mdash; but every item is always buyable at the junk stall, so drops are a discount
+        rather than a gate. A new kind of pursuer is announced during the breather before its first
+        appearance, named alongside the thing that stops it.
         <span class="q">Does the re-solve loop land, or does it read as unfair?</span>
       </li>
       <li>
@@ -272,13 +292,15 @@
   const ROMAN = ["", "II", "III", "IV", "V", "VI", "VII"];
 
   // ------------------------------------------------------------------ content
+  // Every item is always buyable from the stall. Drops are a discount, never a gate —
+  // a counter you can only get from RNG is a threat with no answer.
   const ITEMS = {
-    helm:   { emoji: "⛑️", name: "Dented Helm",   blurb: "+160 hp" },
-    spring: { emoji: "🌀", name: "Rusty Spring",  blurb: "1.6× rate" },
-    bees:   { emoji: "🐝", name: "Jar of Bees",   blurb: "three-way shot" },
-    torch:  { emoji: "🔥", name: "Guttering Torch", blurb: "sets them alight" },
-    spikes: { emoji: "🔱", name: "Bundle of Spikes", blurb: "leapers land on it" },
-    lamp:   { emoji: "🏮", name: "Cracked Lantern", blurb: "drives tunnellers up" },
+    helm:   { emoji: "⛑️", name: "Dented Helm",     blurb: "+160 hp",              price: 60 },
+    spring: { emoji: "🌀", name: "Rusty Spring",    blurb: "1.6× rate",            price: 90 },
+    bees:   { emoji: "🐝", name: "Jar of Bees",     blurb: "three-way shot",       price: 110 },
+    torch:  { emoji: "🔥", name: "Guttering Torch", blurb: "sets them alight",     price: 100 },
+    spikes: { emoji: "🔱", name: "Bundle of Spikes", blurb: "leapers land on it",  price: 70 },
+    lamp:   { emoji: "🏮", name: "Cracked Lantern", blurb: "drives tunnellers up", price: 70 },
   };
   const ITEM_KEYS = Object.keys(ITEMS);
 
@@ -996,6 +1018,22 @@
       cx.font = (big ? 40 : 34) + "px Impact, sans-serif";
       cx.fillStyle = big ? "rgba(209,85,63," + pulse + ")" : "rgba(232,192,90," + pulse + ")";
       cx.fillText(big ? "THEY ARE MASSING — WAVE " + next : "WAVE " + next + " APPROACHING", W / 2, OY - 22);
+
+      // A new kind of pursuer is never a surprise the first time: name it, and name
+      // its answer, while there is still a breather left to go and buy that answer.
+      const debut = FOE_KEYS.filter(k => FOES[k].from === next);
+      if (debut.length) {
+        const f = FOES[debut[0]];
+        cx.fillStyle = "rgba(232,192,90,0.95)";
+        cx.font = "bold 17px 'Trebuchet MS', sans-serif";
+        cx.fillStyle = "rgba(13,11,16,0.72)";
+        cx.fillRect(W / 2 - 300, OY + 22, 600, 54);
+        cx.fillStyle = "rgba(232,192,90,0.95)";
+        cx.fillText("NEW: " + f.name.toUpperCase() + " — " + f.line, W / 2, OY + 42);
+        cx.fillStyle = "#6fbf5b";
+        cx.font = "15px 'Trebuchet MS', sans-serif";
+        cx.fillText("Answer: " + f.fix + "  ·  buy it at the junk stall below", W / 2, OY + 64);
+      }
     }
     if (S.over) {
       cx.fillStyle = "rgba(13,11,16,0.88)"; cx.fillRect(0, 0, W, H);
@@ -1146,6 +1184,30 @@
         : "Junk drops when pursuers die. Click it to pick it up, then click a goblin to bolt it on.";
   }
 
+  const stallEl = document.getElementById("stall");
+  const COUNTERS = new Set(["spikes", "lamp"]);
+  function renderStall() {
+    stallEl.innerHTML = "";
+    for (const k of ITEM_KEYS) {
+      const it = ITEMS[k];
+      const b = document.createElement("button");
+      b.className = "buy" + (COUNTERS.has(k) ? " counter" : "");
+      b.type = "button";
+      b.disabled = S.coins < it.price || S.satchel.length >= 10;
+      b.title = it.name + " — " + it.blurb;
+      b.innerHTML = '<span class="buy-em">' + it.emoji + "</span>" +
+                    "<span>" + it.name + "</span>" +
+                    '<span class="buy-price">' + it.price + "</span>";
+      b.addEventListener("click", () => {
+        if (S.coins < it.price || S.satchel.length >= 10) return;
+        S.coins -= it.price;
+        S.satchel.push(k);
+        renderSlots(); renderStall();
+      });
+      stallEl.appendChild(b);
+    }
+  }
+
   const hzEl = document.getElementById("hud-hazards");
   function renderHazards() {
     hzEl.innerHTML = "";
@@ -1179,7 +1241,7 @@
   const elChamber = document.getElementById("hud-chamber");
   const elStatus = document.getElementById("hud-status");
 
-  function renderAll() { renderRack(); renderSlots(); renderHazards(); }
+  function renderAll() { renderRack(); renderSlots(); renderStall(); renderHazards(); }
 
   document.getElementById("restart").addEventListener("click", () => {
     document.getElementById("descent").classList.remove("on");
@@ -1210,8 +1272,9 @@
       : S.phase === "breather" ? "regrouping"
       : S.foes.length + " closing in";
 
-    const sig = Object.keys(UNITS).map(k => S.coins >= UNITS[k].cost).join("");
-    if (sig !== affordSig) { affordSig = sig; renderRack(); }
+    const sig = Object.keys(UNITS).map(k => S.coins >= UNITS[k].cost).join("") + "|" +
+                ITEM_KEYS.map(k => S.coins >= ITEMS[k].price).join("");
+    if (sig !== affordSig) { affordSig = sig; renderRack(); renderStall(); }
 
     requestAnimationFrame(frame);
   }
