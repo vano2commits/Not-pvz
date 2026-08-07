@@ -142,6 +142,8 @@
                background: linear-gradient(180deg, var(--stone-lit), var(--stone)); }
   .insp-empty { font-size: 12.5px; color: var(--ink-dim); font-style: italic; }
   .insp-body { display: flex; flex-direction: column; gap: 9px; }
+  /* an explicit display: would otherwise beat the UA rule for [hidden] */
+  .insp-body[hidden], .insp-empty[hidden] { display: none; }
   .insp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .insp-name { font-family: var(--display); font-size: 21px; letter-spacing: 0.03em;
                text-transform: uppercase; color: var(--gold); }
@@ -182,6 +184,117 @@
   .bx-line { font-size: 12px; color: var(--ink-dim); }
   .bx-fix { font-size: 12px; color: var(--goblin); }
 
+  .btn.primary { border-color: var(--gold-dim); color: var(--gold); }
+  .btn.primary:hover { border-color: var(--gold); color: #f6e2a8; }
+
+  .game { display: flex; flex-direction: column; gap: 18px; }
+  /* A pass-through wrapper everywhere except short landscape, where it becomes the
+     floating bottom tray. */
+  .tray { display: contents; }
+  canvas, .btn, .card, .buy, .slot, .route { -webkit-tap-highlight-color: transparent; }
+  .hud, .rack, .stall, .satchel, .controls, .inspector { user-select: none; }
+
+  /* ---- turn-your-phone nudge ---------------------------------------------
+     Only ever shown on a small screen held upright. Landscape or desktop and
+     it does not exist. */
+  .rotate-nudge { display: none; }
+  @media (max-width: 900px) and (orientation: portrait) {
+    .rotate-nudge {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      border: 1px dashed var(--gold-dim); border-radius: 3px;
+      padding: 12px 14px; color: var(--gold);
+      font-size: 13px; letter-spacing: 0.04em; text-align: center;
+    }
+    .rotate-nudge::before {
+      content: "⟳"; font-size: 20px;
+      animation: tip 2.4s ease-in-out infinite;
+    }
+    @keyframes tip { 0%, 70%, 100% { transform: rotate(0deg); } 85% { transform: rotate(90deg); } }
+  }
+
+  /* ---- fullscreen play ---------------------------------------------------
+     Driven by a class, not the :fullscreen pseudo, so the same layout can be
+     used as a fixed-position fallback on platforms that refuse to fullscreen a
+     div (iOS Safari). The board takes whatever height is left after the panels,
+     and the panels shed everything you don't need with a thumb on the glass. */
+  .game.fs {
+    background: var(--cave-deep);
+    padding: 8px 10px; gap: 7px;
+    /* not height:100% — that resolves against an auto-height ancestor and collapses */
+    height: 100vh; height: 100dvh; box-sizing: border-box;
+  }
+  .game.fs.faux { position: fixed; inset: 0; z-index: 60; height: 100vh; height: 100dvh; }
+  body.faux-on { overflow: hidden; }
+
+  .game.fs .stage { flex: 1 1 auto; min-height: 0; display: flex;
+                    justify-content: center; align-items: center; }
+  .game.fs canvas { width: auto; height: 100%; max-width: 100%; max-height: 100%;
+                    margin: 0 auto; box-sizing: border-box; }
+  .game.fs .hud { padding: 5px 10px; gap: 14px; }
+  .game.fs .readout-value { font-size: 19px; }
+  .game.fs .readout-sub, .game.fs .readout-label { font-size: 9px; }
+  .game.fs .card-desc,
+  .game.fs .buy span:nth-child(2) span,
+  .game.fs .satchel-hint,
+  .game.fs .insp-empty,
+  .game.fs .insp-items,
+  .game.fs .rotate-nudge { display: none; }
+  .game.fs .card { padding: 5px 9px; min-width: 92px; flex: 1 1 92px; }
+  .game.fs .card-name { font-size: 13px; }
+  .game.fs .rack, .game.fs .stall, .game.fs .satchel { gap: 6px; }
+  .game.fs .stall, .game.fs .satchel, .game.fs .inspector { padding: 5px 9px; }
+  .game.fs .buy { padding: 3px 7px; font-size: 11.5px; }
+  .game.fs .insp-name { font-size: 15px; }
+  .game.fs .controls { gap: 6px; }
+  .game.fs .btn { padding: 4px 10px; font-size: 11px; }
+
+  .hud-tools { display: none; gap: 6px; }
+  .btn.tiny { padding: 3px 9px; font-size: 11px; letter-spacing: 0.06em; }
+
+  /* A short landscape phone cannot stack six panels and still show a board: at
+     293px tall they leave about 75px for it. So keep only the two you need every
+     second — coins and the units — and put the rest behind a toggle. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    /* Overlaying the panels on the board hid the top and bottom lanes — a third of
+       the playable area. Keep them in flow and shrink them instead: a ~24px HUD and
+       a ~34px unit row leave the board the rest, with nothing covered. */
+    .game.fs { padding: 4px 6px; gap: 4px; }
+    .game.fs .hud { padding: 2px 8px; gap: 12px; }
+    .game.fs .readout { flex-direction: row; align-items: baseline; gap: 5px; }
+    .game.fs .readout-value { font-size: 15px; }
+    .game.fs .readout-label { font-size: 9px; }
+    .game.fs .readout-sub, .game.fs .hazards { display: none; }
+    .game.fs .hud-tools { display: flex; margin-left: auto; }
+
+    /* everything but coins and the units goes behind the Build toggle */
+    .game.fs .stall, .game.fs .satchel, .game.fs .inspector, .game.fs .controls { display: none; }
+    .game.fs.extras .stall, .game.fs.extras .satchel, .game.fs.extras .controls { display: flex; }
+    .game.fs.extras .satchel.empty { display: none; }
+    .game.fs.extras .inspector { display: block; }
+    .game.fs.extras .inspector.vacant { display: none; }
+
+    .game.fs .rack, .game.fs #stall, .game.fs #slots {
+      flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    }
+    .game.fs .rack::-webkit-scrollbar,
+    .game.fs #stall::-webkit-scrollbar,
+    .game.fs #slots::-webkit-scrollbar { display: none; }
+    /* the board is the only thing allowed to give up height; a squashed panel
+       silently clips its own text */
+    .game.fs > *, .game.fs .tray > * { flex-shrink: 0; }
+    .game.fs .stage { flex-shrink: 1; }
+
+    /* name and cost on one line, so the price survives the smaller row */
+    .game.fs .card { flex: 0 0 auto; min-width: 0; padding: 3px 8px;
+                     flex-direction: row; align-items: baseline; gap: 6px; }
+    .game.fs .card-name { font-size: 11px; }
+    .game.fs .card-cost { font-size: 10.5px; }
+    .game.fs .stall, .game.fs .satchel, .game.fs .inspector { padding: 3px 8px; }
+    .game.fs .buy { flex: 0 0 auto; white-space: nowrap; }
+    .game.fs .satchel-label { display: none; }
+    .game.fs .insp-name { font-size: 13px; }
+  }
+
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -191,6 +304,9 @@
     <h1 class="wordmark">Hoard</h1>
     <span class="kicker">descent prototype &middot; v0.6</span>
   </header>
+
+  <div class="game" id="game">
+  <div class="rotate-nudge" aria-hidden="true"><span>Turn your phone sideways</span></div>
 
   <div class="hud">
     <div class="readout">
@@ -209,6 +325,10 @@
       <span class="readout-sub" id="hud-status">&nbsp;</span>
     </div>
     <div class="hazards" id="hud-hazards"><span class="hz-empty">no hazards yet</span></div>
+    <div class="hud-tools">
+      <button class="btn tiny" id="panels" type="button">Build ▸</button>
+      <button class="btn tiny" id="fs-exit" type="button" aria-label="Leave fullscreen">✕</button>
+    </div>
   </div>
 
   <div class="stage">
@@ -220,6 +340,7 @@
     </div>
   </div>
 
+  <div class="tray">
   <div class="rack" id="rack"></div>
 
   <div class="inspector" id="inspector">
@@ -246,9 +367,13 @@
   </div>
 
   <div class="controls">
+    <button class="btn primary" id="fullscreen" type="button">Play fullscreen</button>
     <button class="btn" id="restart" type="button">New run</button>
     <button class="btn" id="pause" type="button">Pause</button>
     <span class="satchel-hint">Click a goblin, then another: same kind raises its rank, different kind gives it that job too. Esc cancels.</span>
+  </div>
+  </div>
+
   </div>
 
   <section class="notes">
@@ -306,6 +431,19 @@
 <script>
 (() => {
   "use strict";
+
+  // Without this a phone lays the page out at 980px and scales the result down,
+  // which is why everything was unreadable on mobile. The page is embedded in a
+  // host-owned <head>, so claim the viewport at runtime instead of with a tag.
+  (function claimViewport() {
+    let m = document.querySelector('meta[name="viewport"]');
+    if (!m) {
+      m = document.createElement("meta");
+      m.name = "viewport";
+      document.head.appendChild(m);
+    }
+    m.content = "width=device-width, initial-scale=1, viewport-fit=cover";
+  })();
 
   const W = 960, H = 560;
   const COLS = 9, ROWS = 5, CELL = 96;
@@ -1236,6 +1374,8 @@
   const slotsEl = document.getElementById("slots");
   const hint = document.getElementById("satchel-hint");
   function renderSlots() {
+    // an empty satchel is a dashed box eating a row on a phone
+    slotsEl.closest(".satchel").classList.toggle("empty", !S.satchel.length);
     slotsEl.innerHTML = "";
     S.satchel.forEach((key, i) => {
       const b = document.createElement("button");
@@ -1291,13 +1431,16 @@
 
   function renderInspector() {
     const g = S.selGob;
+    const box = document.getElementById("inspector");
     if (!g || g.hp <= 0) {
       inspEmpty.hidden = false;
       inspBody.hidden = true;
+      box.classList.add("vacant");   // so compact layouts can drop the empty strip
       return;
     }
     inspEmpty.hidden = true;
     inspBody.hidden = false;
+    box.classList.remove("vacant");
     inspName.textContent = fullName(g);
     const slots = RANK_SLOTS(g.tier);
     inspMeta.textContent =
@@ -1422,6 +1565,67 @@
     document.getElementById("descent").classList.remove("on");
     newRun(); renderAll();
   });
+  // ---- fullscreen play -----------------------------------------------------
+  // Android honours the orientation lock; iOS Safari ignores it (and only allows
+  // fullscreen on some elements), so the CSS nudge to turn the phone is the
+  // fallback rather than the exception.
+  const gameEl = document.getElementById("game");
+  const fsBtn = document.getElementById("fullscreen");
+  const inFullscreen = () => document.fullscreenElement || document.webkitFullscreenElement;
+
+  let faux = false;   // true when we're faking it because the platform said no
+
+  function setFsChrome(on) {
+    gameEl.classList.toggle("fs", on);
+    gameEl.classList.toggle("faux", on && faux);
+    document.body.classList.toggle("faux-on", on && faux);
+    fsBtn.textContent = on ? "Exit fullscreen" : "Play fullscreen";
+  }
+
+  async function enterFullscreen() {
+    const req = gameEl.requestFullscreen || gameEl.webkitRequestFullscreen;
+    faux = !req;
+    if (req) {
+      try { await req.call(gameEl, { navigationUI: "hide" }); }
+      catch { faux = true; }            // refused (iOS, permissions policy) — fake it
+    }
+    try {
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape");
+    } catch { /* refused; the nudge asks the player to turn the phone instead */ }
+    setFsChrome(true);
+  }
+
+  async function exitFullscreen() {
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); }
+    catch { /* nothing to undo */ }
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!faux && exit) { try { await exit.call(document); } catch { /* already out */ } }
+    faux = false;
+    setFsChrome(false);
+  }
+
+  fsBtn.addEventListener("click", () => {
+    if (gameEl.classList.contains("fs")) exitFullscreen();
+    else enterFullscreen();
+  });
+  document.getElementById("fs-exit").addEventListener("click", exitFullscreen);
+
+  const panelsBtn = document.getElementById("panels");
+  panelsBtn.addEventListener("click", () => {
+    const open = gameEl.classList.toggle("extras");
+    panelsBtn.textContent = open ? "Build ▾" : "Build ▸";
+  });
+
+  // Leaving via Esc or a system gesture has to unwind our chrome too.
+  for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
+    document.addEventListener(ev, () => {
+      if (!inFullscreen() && !faux) setFsChrome(false);
+    });
+  }
+  addEventListener("keydown", e => {
+    if (e.key === "Escape" && faux && gameEl.classList.contains("fs")) exitFullscreen();
+  });
+
   const pauseBtn = document.getElementById("pause");
   pauseBtn.addEventListener("click", () => {
     S.paused = !S.paused;
