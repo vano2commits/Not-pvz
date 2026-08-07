@@ -1,0 +1,539 @@
+<title>Hoard — World One design</title>
+
+<style>
+  :root {
+    --bg:        #f7f4ef;
+    --surface:   #ffffff;
+    --sunken:    #efeae1;
+    --line:      #ddd5c8;
+    --ink:       #22201f;
+    --ink-soft:  #5d5750;
+    --ink-faint: #8b8378;
+    --gold:      #9a6f10;
+    --gold-bg:   #f6ecd2;
+    --green:     #3d6b34;
+    --green-bg:  #e6efe0;
+    --red:       #a33b28;
+    --red-bg:    #f7e4df;
+    --display: Impact, Haettenschweiler, "Arial Narrow Bold", "Franklin Gothic Bold", sans-serif;
+    --body: "Trebuchet MS", "Segoe UI", Candara, sans-serif;
+    --data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #100e13;
+      --surface:   #1b1720;
+      --sunken:    #17141b;
+      --line:      #342d3b;
+      --ink:       #e8e1d6;
+      --ink-soft:  #b6ada2;
+      --ink-faint: #857c8c;
+      --gold:      #e8c05a;
+      --gold-bg:   #2a2216;
+      --green:     #8ed07a;
+      --green-bg:  #1c2618;
+      --red:       #e0897a;
+      --red-bg:    #2a1a18;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #100e13;
+    --surface:   #1b1720;
+    --sunken:    #17141b;
+    --line:      #342d3b;
+    --ink:       #e8e1d6;
+    --ink-soft:  #b6ada2;
+    --ink-faint: #857c8c;
+    --gold:      #e8c05a;
+    --gold-bg:   #2a2216;
+    --green:     #8ed07a;
+    --green-bg:  #1c2618;
+    --red:       #e0897a;
+    --red-bg:    #2a1a18;
+  }
+
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--body); line-height: 1.62;
+    font-size: 16px;
+  }
+  .page { max-width: 940px; margin: 0 auto; padding: 40px 22px 90px; }
+
+  /* ---- masthead ---- */
+  .masthead { border-bottom: 2px solid var(--ink); padding-bottom: 18px; margin-bottom: 8px; }
+  .eyebrow {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em;
+    color: var(--ink-faint); margin: 0 0 6px;
+  }
+  h1 {
+    font-family: var(--display); font-size: clamp(38px, 8vw, 68px);
+    letter-spacing: 0.01em; text-transform: uppercase; margin: 0; line-height: 0.92;
+    color: var(--gold);
+  }
+  .sub { font-size: 17px; color: var(--ink-soft); margin: 10px 0 0; max-width: 62ch; }
+  .meta {
+    font-family: var(--data); font-size: 12px; color: var(--ink-faint);
+    margin-top: 14px; display: flex; gap: 18px; flex-wrap: wrap;
+  }
+
+  /* ---- structure ---- */
+  h2 {
+    font-family: var(--display); font-size: 15px; text-transform: uppercase;
+    letter-spacing: 0.16em; color: var(--gold); font-weight: normal;
+    margin: 52px 0 4px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  h2 .n { color: var(--ink-faint); margin-right: 10px; }
+  h3 {
+    font-size: 17px; margin: 26px 0 6px; color: var(--ink);
+    letter-spacing: 0.01em;
+  }
+  p { margin: 10px 0; max-width: 68ch; }
+  ul, ol { margin: 10px 0; padding-left: 20px; max-width: 68ch; }
+  li { margin: 5px 0; }
+  strong { color: var(--ink); font-weight: 700; }
+  em { color: var(--ink-soft); }
+  a { color: var(--gold); }
+
+  .lede { font-size: 18px; color: var(--ink); max-width: 62ch; }
+
+  /* ---- callouts ---- */
+  .note {
+    border-left: 3px solid var(--line); background: var(--sunken);
+    padding: 12px 16px; margin: 18px 0; max-width: 68ch;
+    border-radius: 0 3px 3px 0;
+  }
+  .note p { margin: 5px 0; }
+  .note.good { border-left-color: var(--green); background: var(--green-bg); }
+  .note.warn { border-left-color: var(--red); background: var(--red-bg); }
+  .note-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em;
+    color: var(--ink-faint); display: block; margin-bottom: 2px;
+  }
+
+  /* ---- state tags ---- */
+  .tag {
+    display: inline-block; font-family: var(--data); font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 1px 7px; border-radius: 2px; border: 1px solid;
+    vertical-align: 2px; margin-left: 8px; white-space: nowrap;
+  }
+  .tag.built { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+  .tag.new   { color: var(--gold);  border-color: var(--gold);  background: var(--gold-bg); }
+  .tag.cut   { color: var(--red);   border-color: var(--red);   background: var(--red-bg); }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; margin: 18px 0; border: 1px solid var(--line); border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 660px; }
+  th {
+    text-align: left; font-family: var(--body); font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: 0.13em; color: var(--ink-faint);
+    padding: 10px 13px; background: var(--sunken);
+    border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  td { padding: 10px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.name { font-weight: 700; white-space: nowrap; }
+  .ans { color: var(--green); }
+  .rule { color: var(--ink-soft); }
+
+  /* ---- run diagram ---- */
+  .chambers { display: flex; gap: 5px; margin: 20px 0; flex-wrap: wrap; }
+  .ch {
+    flex: 1 1 62px; min-width: 62px; border: 1px solid var(--line);
+    border-radius: 3px; padding: 9px 7px; text-align: center; background: var(--surface);
+  }
+  .ch.beat { border-color: var(--gold); background: var(--gold-bg); }
+  .ch-n { font-family: var(--display); font-size: 21px; color: var(--gold); line-height: 1; }
+  .ch-l { font-size: 10px; color: var(--ink-faint); margin-top: 3px; line-height: 1.3; }
+
+  /* ---- milestone list ---- */
+  .ms { display: flex; flex-direction: column; gap: 0; margin: 20px 0; }
+  .ms-row {
+    display: grid; grid-template-columns: 74px 1fr; gap: 16px;
+    padding: 14px 0; border-top: 1px solid var(--line);
+  }
+  .ms-row:last-child { border-bottom: 1px solid var(--line); }
+  .ms-tag {
+    font-family: var(--display); font-size: 14px; letter-spacing: 0.08em;
+    color: var(--gold); text-transform: uppercase;
+  }
+  .ms-row h3 { margin: 0 0 4px; font-size: 16px; }
+  .ms-row p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+
+  .footer {
+    margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--ink-faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Design document &middot; scoped to the first world</p>
+    <h1>Hoard</h1>
+    <p class="sub">
+      A lane defence roguelite. You are the goblins, retreating deeper underground with a cart of
+      stolen junk, and the heroes coming to take it back are the horde.
+    </p>
+    <div class="meta">
+      <span>v1 &middot; world one only</span>
+      <span>Godot 2D &middot; prototype in web</span>
+      <span>Run length target: ~20 min</span>
+    </div>
+  </header>
+
+  <div class="note">
+    <span class="note-label">How to read this</span>
+    <p>
+      <span class="tag built">built</span> means it exists in the playable prototype and has been
+      tested. <span class="tag new">proposed</span> means it is designed but unbuilt &mdash; treat every
+      one of those as a guess until a playtest says otherwise.
+      <span class="tag cut">cut</span> means deliberately excluded, with the reason recorded so we
+      don't relitigate it monthly.
+    </p>
+    <p>
+      This covers <strong>world one only</strong>. Nothing here commits the rest of the game. The
+      document is meant to be edited as playtests contradict it &mdash; a design doc that stops changing
+      has stopped being read.
+    </p>
+  </div>
+
+  <h2><span class="n">01</span> The pitch</h2>
+  <p class="lede">
+    Plants vs. Zombies' lane defence, with the roles inverted and a fusion engine where the plant
+    roster used to be.
+  </p>
+  <p>
+    Grubby little goblins defend a cart of worthless treasure &mdash; bottle caps, one good boot, a
+    doorknob &mdash; against gleaming, self-important adventurers who want it back. Both sides are
+    completely sincere. The goblins genuinely believe the doorknob is priceless, and they may be right:
+    the caravan stole something that matters and nobody knows which thing it is.
+  </p>
+  <p>
+    The thing that makes it not-a-reskin is <strong>merging</strong>. Every goblin can be folded into
+    another. Same kind and rank raises rank; different kinds produce a hybrid that does both jobs. Your
+    board is never finished, and the answer to a new threat is always another goblin, never a shop.
+  </p>
+
+  <div class="note good">
+    <span class="note-label">Validated in prototype</span>
+    <p>
+      The loop is fun before art: a tester reached wave 25 unprompted and described merging as
+      &ldquo;the most interactive part.&rdquo; The design below is built outward from that sentence.
+    </p>
+  </div>
+
+  <h2><span class="n">02</span> What a run is</h2>
+  <p>
+    A run is one descent: <strong>ten chambers</strong>, roughly four waves each, about twenty minutes.
+    Death ends the run and you restart at chamber one. Nothing carries over except unlocked
+    <em>variety</em> &mdash; see section 7.
+  </p>
+
+  <div class="chambers">
+    <div class="ch beat"><div class="ch-n">1</div><div class="ch-l">Squire</div></div>
+    <div class="ch beat"><div class="ch-n">2</div><div class="ch-l">Scout</div></div>
+    <div class="ch beat"><div class="ch-n">3</div><div class="ch-l">Leaper</div></div>
+    <div class="ch beat"><div class="ch-n">4</div><div class="ch-l">Knight</div></div>
+    <div class="ch"><div class="ch-n">5</div><div class="ch-l">Pavise</div></div>
+    <div class="ch"><div class="ch-n">6</div><div class="ch-l">Bannerman</div></div>
+    <div class="ch"><div class="ch-n">7</div><div class="ch-l">Hazard</div></div>
+    <div class="ch"><div class="ch-n">8</div><div class="ch-l">Mixed</div></div>
+    <div class="ch"><div class="ch-n">9</div><div class="ch-l">Gauntlet</div></div>
+    <div class="ch"><div class="ch-n">10</div><div class="ch-l">The Reeve</div></div>
+  </div>
+
+  <h3>Between chambers</h3>
+  <p>
+    You pick one of two routes down. Each names its hazard before you choose it, so a bad chamber is a
+    decision rather than a dice roll. Hazards change <em>the board itself</em> &mdash; cells buried,
+    outer lanes sealed, low ground flooded &mdash; and stack for the rest of the run.
+    <span class="tag built">built</span>
+  </p>
+  <p>
+    This is also where the story lives. No cutscenes: a line or two of flavour on the route cards, and
+    occasionally a demand from the Reeve. It costs nothing to skip and nothing to produce.
+  </p>
+
+  <h2><span class="n">03</span> The core loop</h2>
+  <ol>
+    <li><strong>Coins accrue</strong> from the sky and from Hoarder goblins. Free income decays as the
+      run goes deeper, so built economy has to take over. <span class="tag built">built</span></li>
+    <li><strong>Place goblins</strong> in a 9&times;5 grid. Coins buy goblins and nothing else.</li>
+    <li><strong>Waves arrive</strong> on a 25&ndash;31s timer, or two seconds after you break the
+      current one below a threshold re-rolled each wave between 50% and 65% health. Killing fast pulls
+      the game forward. <span class="tag built">built</span></li>
+    <li><strong>Junk drops</strong> from the dead &mdash; the only way to get any &mdash; and bolts onto
+      goblins for pure upside. <span class="tag built">built</span></li>
+    <li><strong>Merge</strong> to answer what the waves are doing to you.</li>
+    <li><strong>Descend</strong>, take a hazard, repeat. Something reaches the cart, the run ends.</li>
+  </ol>
+
+  <div class="note">
+    <span class="note-label">Why failure is terminal, not a drain</span>
+    <p>
+      An earlier build let heroes steal coins gradually. It produced the PvZ2 feel-bad: a slow bleed
+      where the correct play is to write off a lane. Now a breach fires that lane's single bear trap,
+      and with the trap spent the run ends. Binary and dramatic beats gradual and grim.
+      <span class="tag built">built</span>
+    </p>
+  </div>
+
+  <h2><span class="n">04</span> Merging &mdash; the differentiator</h2>
+  <p>
+    Two directions, opposite costs. Both cost raw power, which is what stops &ldquo;merge everything,
+    always&rdquo; from being correct. <span class="tag built">built</span>
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Merge</th><th>Requires</th><th>You gain</th><th>You give up</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name">Rank up</td>
+          <td>Same kind, same rank</td>
+          <td>Item slots (2 &rarr; 4 &rarr; 6), a freed cell, and height &mdash; Leapers cannot clear
+              a rank&nbsp;2+ goblin</td>
+          <td>Output grows &times;1.7 per rank, not &times;2. Two bodies become 85% of their sum.</td>
+        </tr>
+        <tr>
+          <td class="name">Hybridise</td>
+          <td>Different kinds, same rank</td>
+          <td>Both jobs in one cell, on independent cooldowns. Ten named pairings.</td>
+          <td>70% efficiency on each job, and 60% of both bodies' health.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    Rank caps at 4. Jobs cap at 2. A rank-3 goblin holding six pieces of junk and two jobs is the
+    ceiling, and getting one there should feel like the run's story.
+  </p>
+
+  <div class="note warn">
+    <span class="note-label">Known risk</span>
+    <p>
+      Making rank the Leaper's counter may quietly make ranking up <em>mandatory</em>, which would
+      flatten the choice between rank and hybrid. If playtests show that, the fix is to let hybrids
+      count as tall too, so both directions answer Leapers.
+    </p>
+  </div>
+
+  <h2><span class="n">05</span> The cast</h2>
+
+  <h3>Goblins <span class="tag built">built</span></h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Goblin</th><th>Cost</th><th>Job</th><th>Role in the loop</th></tr></thead>
+      <tbody>
+        <tr><td class="name">Chucker</td><td class="num">50</td><td>Throws rocks down the lane</td><td class="rule">Baseline damage. The thing you have most of.</td></tr>
+        <tr><td class="name">Hoarder</td><td class="num">50</td><td>25 coins every ~24s</td><td class="rule">Economy. ~48s payback, exactly Sunflower's maths.</td></tr>
+        <tr><td class="name">Barricade</td><td class="num">50</td><td>560 hp, does not fight</td><td class="rule">Buys time. Worthless alone, essential in front.</td></tr>
+        <tr><td class="name">Bomber</td><td class="num">125</td><td>Detonates when something nears</td><td class="rule">Panic button and crowd answer. One use.</td></tr>
+        <tr><td class="name">Ballista</td><td class="num">350</td><td>Pierces the whole lane</td><td class="rule">The only thing worth saving for. Reaches the back rank.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Hybrids <span class="tag built">built</span></h3>
+  <p>
+    Ten pairings, each named so it reads as its own creature: <strong>Bunker</strong> (wall that shoots),
+    <strong>Tollkeeper</strong> (shoots and earns), <strong>Strongbox</strong> (protected economy),
+    <strong>Powder Keg</strong> (wall that detonates), <strong>Bastion</strong>, <strong>Mortar</strong>,
+    <strong>Battery</strong>, <strong>Piggy Bank</strong>, <strong>Tithe Engine</strong>,
+    <strong>Siege Mortar</strong>.
+  </p>
+
+  <h3>Junk <span class="tag built">built</span></h3>
+  <p>
+    Drops only. Never sold, never required. Six slots on a rank-3 goblin.
+    Dented Helm (+health), Rusty Spring (&times;1.6 rate), Jar of Bees (three-way shot),
+    Guttering Torch (burn), Bundle of Spikes (thorns). Combinations rename the goblin &mdash; a Chucker
+    with bees and a torch is the <em>Wrath of the Doorknob</em> &mdash; and that naming is most of the
+    discovery.
+  </p>
+
+  <h3>Pursuers</h3>
+  <p>
+    Every one has a <em>rule</em> you can learn and exploit, in the tradition of the newspaper zombie.
+    Every counter is a goblin or a merge, never an item, so nothing is gated behind a drop.
+    <strong>The game never states an answer</strong> &mdash; the column below is for us.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Pursuer</th><th>Debut</th><th>Rule</th><th>Answer (never stated in game)</th></tr></thead>
+      <tbody>
+        <tr><td class="name">Squire</td><td class="num">Ch 1</td><td class="rule">Walks. Hits what's in front of it.</td><td class="ans">Anything.</td></tr>
+        <tr><td class="name">Scout</td><td class="num">Ch 2</td><td class="rule">Fast and flimsy. Arrives before you're ready.</td><td class="ans">Rate of fire, or a wall to buy time.</td></tr>
+        <tr><td class="name">Leaper</td><td class="num">Ch 3</td><td class="rule">Vaults the first goblin it meets.</td><td class="ans">Rank 2+. It bounces off, sits down hard, sees stars.</td></tr>
+        <tr><td class="name">Knight</td><td class="num">Ch 4</td><td class="rule">Slow, armoured, chews walls.</td><td class="ans">Concentrated damage. Rank up your Chuckers.</td></tr>
+        <tr><td class="name">Pavise <span class="tag new">proposed</span></td><td class="num">Ch 5</td><td class="rule">Body shield: takes 80% less from anything hitting it head-on.</td><td class="ans">Bomber blast or Torch burn — neither is a frontal hit.</td></tr>
+        <tr><td class="name">Bannerman <span class="tag new">proposed</span></td><td class="num">Ch 6</td><td class="rule">Hangs at the back, speeds up everything in its lane.</td><td class="ans">Ballista — the only thing that reaches past the front rank.</td></tr>
+        <tr><td class="name">The Reeve <span class="tag new">proposed</span></td><td class="num">Ch 10</td><td class="rule">Boss. Walks the width of the board, not a lane, and calls reinforcements into whatever lane is emptiest.</td><td class="ans">A board that is strong everywhere rather than stacked in one lane.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">06</span> The ten chambers</h2>
+  <p>
+    Difficulty is <em>authored</em>, not just a rising number. Each chamber introduces one idea and gives
+    you a chamber to practise it before the next arrives. The wave budget grows quadratically underneath
+    (<span class="num">3 + 2.4n + 0.22n²</span>) so the opening stays gentle and depth genuinely bites.
+    <span class="tag built">built</span>
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Ch</th><th>Introduces</th><th>Teaches</th><th>Hazard offered</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>Squire</td><td class="rule">Place, earn, hold a lane. No hazard, no route choice.</td><td class="rule">None</td></tr>
+        <tr><td class="num">2</td><td>Scout</td><td class="rule">Cover all five lanes. First junk drop is guaranteed here.</td><td class="rule">None</td></tr>
+        <tr><td class="num">3</td><td>Leaper</td><td class="rule">Merge. The bounce is the lesson. First route choice.</td><td class="rule">Mild</td></tr>
+        <tr><td class="num">4</td><td>Knight</td><td class="rule">Rank for power, not just for height.</td><td class="rule">Mild</td></tr>
+        <tr><td class="num">5</td><td>Pavise</td><td class="rule">Damage type matters — walls of Chuckers stop being enough.</td><td class="rule">Real</td></tr>
+        <tr><td class="num">6</td><td>Bannerman</td><td class="rule">Reach. Saving 350 for a Ballista pays off.</td><td class="rule">Real</td></tr>
+        <tr><td class="num">7</td><td>&mdash;</td><td class="rule">Board adaptation: the chamber itself is the enemy.</td><td class="rule">Severe (two offered)</td></tr>
+        <tr><td class="num">8</td><td>&mdash;</td><td class="rule">Mixed pressure. Everything so far, together.</td><td class="rule">Real</td></tr>
+        <tr><td class="num">9</td><td>&mdash;</td><td class="rule">Gauntlet. Double budget, no new ideas — pure execution.</td><td class="rule">Severe</td></tr>
+        <tr><td class="num">10</td><td>The Reeve</td><td class="rule">Boss. Punishes a board stacked into one lane.</td><td class="rule">None</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">07</span> Unlocks</h2>
+  <p>
+    <strong>Variety, never power.</strong> A veteran's run is not easier than a beginner's, it has more
+    interesting options in it. This is the deliberate opposite of PvZ2, where progress meant being
+    allowed to win. <span class="tag new">proposed</span>
+  </p>
+  <p>
+    There is <strong>no unlock currency and no grind</strong>. Unlocks fire off milestones &mdash; things
+    you did, not hours you spent:
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Milestone</th><th>Unlocks</th><th>Why that pairing</th></tr></thead>
+      <tbody>
+        <tr><td class="rule">Finish your first run, win or lose</td><td class="name">Slinger</td><td class="rule">A cheap fast Chucker. Rewards a first loss with a new opening.</td></tr>
+        <tr><td class="rule">Make a rank-3 goblin</td><td class="name">Sixth junk slot recipe</td><td class="rule">Teaches that rank is the road to depth.</td></tr>
+        <tr><td class="rule">Make five different hybrids</td><td class="name">Tinker</td><td class="rule">Repairs neighbours — rewards wide boards with a wide-board tool.</td></tr>
+        <tr><td class="rule">Reach chamber 5</td><td class="name">Firepot</td><td class="rule">Lobs over the front rank. Arrives exactly when Pavise does.</td></tr>
+        <tr><td class="rule">Kill a Bannerman before it buffs anything</td><td class="name">Warden</td><td class="rule">Taunts a lane. Given for a precision play, so it reads as earned.</td></tr>
+        <tr><td class="rule">Beat the Reeve</td><td class="name">World two</td><td class="rule">&mdash;</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">08</span> Story, and how little of it there is</h2>
+  <p>
+    The goblins never speak. Like the plants, they are characterful through design and behaviour only.
+    All narration sits in two cheap places: <strong>route cards</strong> between chambers, and
+    <strong>the Reeve's demands</strong>, which arrive as a line of text before the chambers she has
+    reinforced.
+  </p>
+  <p>
+    The premise resolves the obvious question — <em>why would heroes chase goblins this far?</em> — in
+    one sentence: <strong>the caravan stole something that matters, and the goblins do not know which
+    thing it is.</strong> That keeps the joke (they are sincere about the doorknob), explains escalating
+    pursuit, and scales past humans: deeper things want it more, and the adventuring party is merely who
+    reached you first.
+  </p>
+  <p>
+    World one's cast is human authority: squires, knights, a Reeve enforcing a claim. Later worlds are
+    not human, and that shift is the reward for finishing this one.
+  </p>
+
+  <h2><span class="n">09</span> Deliberately not doing</h2>
+  <p>
+    Kept here so we stop reopening them. <span class="tag cut">cut</span>
+  </p>
+  <ul>
+    <li><strong>Enemies that bypass the line entirely</strong> (the Tunneller). Arriving at chamber 3 it
+      asked players to solve a puzzle before learning the basics. PvZ waits for the pool levels, hours
+      in. Deferred to a later world, not deleted.</li>
+    <li><strong>A shop.</strong> Counters are goblins, so junk can stay pure random upside with nothing
+      gated behind a drop.</li>
+    <li><strong>Two resources.</strong> Tried and rejected on paper — it usually just means waiting
+      twice.</li>
+    <li><strong>The hoard as a health bar.</strong> One number doing currency, income and lose-condition
+      was elegant and did not survive contact with a player; it read as ordinary sun.</li>
+    <li><strong>Permanent stat upgrades.</strong> See section 7.</li>
+    <li><strong>Worlds two onward, boss variants, dialogue, meta-currency.</strong> Not until world one
+      is genuinely good.</li>
+  </ul>
+
+  <h2><span class="n">10</span> Build order</h2>
+  <p>
+    Ten chambers is not the first milestone. The first milestone is the <strong>first ten
+    minutes</strong>, because that is what tells you whether any of the remaining work is worth doing.
+  </p>
+  <div class="ms">
+    <div class="ms-row">
+      <div class="ms-tag">M1</div>
+      <div>
+        <h3>Chambers 1&ndash;3 in Godot, polished</h3>
+        <p>Port the validated loop. Real art for five goblins and three pursuers, sound, the merge
+          feedback. Nothing procedural beyond what exists. Ship this to ten testers.</p>
+      </div>
+    </div>
+    <div class="ms-row">
+      <div class="ms-tag">M2</div>
+      <div>
+        <h3>The full ten-chamber run</h3>
+        <p>Pavise, Bannerman, the hazard chamber, the Reeve. Difficulty tuned against real players
+          rather than a script.</p>
+      </div>
+    </div>
+    <div class="ms-row">
+      <div class="ms-tag">M3</div>
+      <div>
+        <h3>Unlocks and the meta layer</h3>
+        <p>Milestone tracking, the four unlockable goblins, the run-summary screen. Only worth building
+          once people want a second run.</p>
+      </div>
+    </div>
+    <div class="ms-row">
+      <div class="ms-tag">M4</div>
+      <div>
+        <h3>Feel pass</h3>
+        <p>Animation, screen shake, the sound of a merge. This is where a competent game becomes one
+          people talk about, and it cannot be done early.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">11</span> Open questions</h2>
+  <p>These are unresolved and should be resolved by playtest, not by argument.</p>
+  <ul>
+    <li><strong>Is merging still a choice?</strong> Rank as the Leaper counter may make ranking up
+      compulsory. Watch whether anyone ever chooses to hybridise instead.</li>
+    <li><strong>Are hybrids simply better?</strong> The Bunker solves two problems in one cell. If it
+      dominates, lower the 60% health share before touching the 70% output share.</li>
+    <li><strong>Is twenty minutes the right run?</strong> Untested. Ten chambers might want to be six.</li>
+    <li><strong>Does the invisible tutorial land?</strong> If testers never work out the Leaper rule
+      unprompted, the teaching is wrong — add a clearer visual, not a text box.</li>
+    <li><strong>Does a losing run feel worth having played?</strong> The single most important question
+      for any roguelite, and the one most easily answered too late.</li>
+  </ul>
+
+  <div class="footer">
+    Companion to the playable prototype. Everything tagged <span class="tag built">built</span> can be
+    tried right now; everything else is a hypothesis with a name.
+  </div>
+
+</div>
+
+<script>
+  // The host owns <head>, so claim the viewport at runtime — without it a phone
+  // lays this out at 980px and scales it down to something unreadable.
+  (function () {
+    let m = document.querySelector('meta[name="viewport"]');
+    if (!m) { m = document.createElement("meta"); m.name = "viewport"; document.head.appendChild(m); }
+    m.content = "width=device-width, initial-scale=1";
+  })();
+</script>
