@@ -1,0 +1,617 @@
+<title>Hoard — The Pour</title>
+
+<style>
+  :root {
+    --cave-deep: #0b0910; --cave: #141119; --stone: #241f26; --stone-lit: #2f2833;
+    --gold: #e8c05a; --gold-dim: #8a7134; --green: #6fbf5b; --red: #d1553f;
+    --ink: #e6dfd4; --ink-dim: #9a9089;
+    --display: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+    --body: "Trebuchet MS", "Segoe UI", Candara, sans-serif;
+    --data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  body {
+    margin: 0; background:
+      radial-gradient(ellipse 800px 500px at 20% 10%, #201826 0%, transparent 60%),
+      var(--cave-deep);
+    color: var(--ink); font-family: var(--body); min-height: 100vh; line-height: 1.55;
+  }
+  .shell { max-width: 1080px; margin: 0 auto; padding: 22px 18px 60px;
+           display: flex; flex-direction: column; gap: 14px; }
+  .masthead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-family: var(--display); font-size: clamp(28px, 5.5vw, 44px); margin: 0;
+       color: var(--gold); text-transform: uppercase; letter-spacing: .02em; line-height: .95;
+       text-shadow: 0 2px 0 #4a3a12, 0 0 28px rgba(232,192,90,.24); }
+  .kicker { font-size: 12px; text-transform: uppercase; letter-spacing: .15em; color: var(--ink-dim); }
+
+  .wrap { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  canvas { display: block; width: 100%; max-width: 640px; height: auto; aspect-ratio: 700 / 900;
+           border: 1px solid #3b3340; border-radius: 4px; background: var(--cave);
+           cursor: grab; touch-action: none; }
+  canvas.pouring { cursor: grabbing; }
+
+  .side { flex: 1 1 300px; min-width: 260px; display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+           border: 1px solid #3b3340; border-radius: 4px; padding: 13px 15px; }
+  .label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .17em; color: var(--ink-dim); }
+  .big { font-family: var(--display); font-size: 40px; line-height: 1.05; color: var(--gold);
+         font-variant-numeric: tabular-nums; transition: transform .08s ease-out; }
+  .big.bump { transform: scale(1.14); }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+         font-size: 13px; padding: 3px 0; }
+  .row span:last-child { font-family: var(--data); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--ink-dim); }
+
+  .btn { font-family: var(--body); font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+         background: transparent; color: var(--ink-dim); border: 1px solid #443b49;
+         border-radius: 3px; padding: 8px 15px; cursor: pointer; transition: transform .1s, color .12s, border-color .12s; }
+  .btn:hover { color: var(--ink); border-color: var(--gold-dim); transform: translateY(-2px); }
+  .btn:active { transform: translateY(1px); }
+  .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .btn.primary { color: var(--gold); border-color: var(--gold-dim); font-size: 13px; padding: 10px 18px; }
+  .btn.primary:hover { background: rgba(232,192,90,.09); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .legend { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+  .legend div { display: flex; gap: 9px; align-items: center; }
+  .sw { width: 26px; height: 11px; border-radius: 2px; flex: none; }
+
+  .foot { font-size: 12.5px; color: var(--ink-dim); max-width: 74ch;
+          border-top: 1px solid #2b2530; padding-top: 14px; }
+  .foot b { color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="shell">
+  <header class="masthead">
+    <h1>The Pour</h1>
+    <span class="kicker">between chambers &middot; mechanic toy</span>
+  </header>
+
+  <div class="wrap">
+    <canvas id="c" width="700" height="900" aria-label="A shaft of multiplier gates. Aim the chute and pour your gold through."></canvas>
+
+    <div class="side">
+      <div class="panel">
+        <div class="label">Landed in the cart</div>
+        <div class="big" id="banked">0</div>
+        <div class="row"><span class="muted">Carried in</span><span id="carried">0</span></div>
+        <div class="row"><span class="muted">Still falling</span><span id="falling">0</span></div>
+        <div class="row"><span class="muted">Lost over the edge</span><span id="lost">0</span></div>
+        <div class="row"><span class="muted">Net</span><span id="mult">&times;0.00</span></div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" id="pour" type="button">Pour</button>
+        <button class="btn" id="again" type="button">Reset</button>
+        <button class="btn" id="layout" type="button">New shaft</button>
+        <button class="btn" id="mute" type="button">Sound on</button>
+      </div>
+
+      <div class="panel legend">
+        <div><span class="sw" style="background:#6fbf5b"></span><span>Multiplier &mdash; every coin through it becomes more</span></div>
+        <div><span class="sw" style="background:#d1553f"></span><span>Toll &mdash; takes roughly half of what passes</span></div>
+        <div><span class="sw" style="background:#8f8698"></span><span>Rock &mdash; solid, deflects</span></div>
+        <div><span class="sw" style="background:#e8c05a"></span><span>The cart &mdash; only what lands here is carried on</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="label">How it plays</div>
+        <p style="margin:6px 0 0; font-size:13px;">
+          Drag the chute while pouring. The stream keeps falling wherever you last pointed it,
+          so a good pour is a steady hand across a whole run, not one lucky drop.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    A standalone toy for the between-chamber idea: whatever gold you didn't spend gets poured
+    down to the next chamber, through whatever the cave puts in the way. <b>It is aimed, not
+    spun</b> &mdash; you steer the chute the whole way down, which is what stops it being a slot
+    machine. The count is exact: while there is room on screen a multiplier makes real new coins,
+    and once the shaft is full it raises the value of each coin instead, so the number stays honest
+    when the picture cannot.
+  </p>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  (function claimViewport() {
+    let m = document.querySelector('meta[name="viewport"]');
+    if (!m) { m = document.createElement("meta"); m.name = "viewport"; document.head.appendChild(m); }
+    m.content = "width=device-width, initial-scale=1";
+  })();
+
+  const W = 700, H = 900;
+  const CAP = 620;                 // live coins on screen; beyond this, value scales instead
+  const CART = { x: 250, w: 200, y: 830 };
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const pick = a => a[(Math.random() * a.length) | 0];
+
+  // ------------------------------------------------------------------- audio
+  const Snd = (() => {
+    let ctx = null, master = null, muted = false, buf = null, lastClink = 0, clinks = 0;
+    function wake() {
+      if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ctx = new AC();
+      master = ctx.createGain(); master.gain.value = 0.85; master.connect(ctx.destination);
+      const n = ctx.sampleRate * 0.8;
+      buf = ctx.createBuffer(1, n, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    }
+    function tone(type, f0, f1, dur, gain, delay = 0) {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime + delay;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t);
+      if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(gain, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+    }
+    function hiss(dur, gain, f0, f1, q = 1, delay = 0) {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime + delay;
+      const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = rnd(0.8, 1.2);
+      const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, t);
+      if (f1) bp.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(bp); bp.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.02);
+    }
+    return {
+      wake, toggle() { muted = !muted; return !muted; },
+      // hundreds of coins would be a wall of noise; cap the rate and vary the pitch
+      clink() {
+        if (!ctx || muted) return;
+        const now = ctx.currentTime;
+        if (now - lastClink < 0.028) return;
+        lastClink = now;
+        clinks++;
+        tone("triangle", rnd(1500, 2400), null, 0.045, 0.035);
+      },
+      gate(mult) {
+        if (mult > 1) {
+          const base = 330 * Math.min(mult, 4);
+          tone("triangle", base, base * 2, 0.18, 0.12);
+          tone("sine", base * 2, base * 3, 0.22, 0.06, 0.03);
+          hiss(0.24, 0.07, 700, 3600, 0.8);
+        } else {
+          tone("sawtooth", 220, 90, 0.22, 0.13);
+          hiss(0.2, 0.09, 500, 120, 1.2);
+        }
+      },
+      pour() { hiss(0.5, 0.1, 300, 1400, 0.6); tone("sine", 90, 150, 0.4, 0.16); },
+      done(good) {
+        if (good) [523, 659, 784, 1046].forEach((f, i) => tone("triangle", f, null, 0.5, 0.15, i * 0.1));
+        else [392, 294, 220].forEach((f, i) => tone("sawtooth", f, null, 0.45, 0.12, i * 0.13));
+      },
+    };
+  })();
+
+  // ------------------------------------------------------------------ layouts
+  // A shaft is gates (permeable, they change the stream) plus rocks (solid, they aim it).
+  let gates = [], rocks = [], pegs = [], ramps = [];
+
+  // Three separated channels, each with its own sequence of gates. Aim picks a
+  // channel; that is the decision. An open shaft full of pegs scattered everything
+  // evenly and made aiming worthless — the reference layouts are channelled for
+  // exactly this reason.
+  const CHAN = [
+    { x: 28,  w: 210 },
+    { x: 250, w: 200 },
+    { x: 462, w: 210 },
+  ];
+  const TIERS = [220, 372, 524, 676];
+
+  function buildShaft() {
+    gates = []; rocks = []; pegs = []; ramps = [];
+
+    // dividers run the height of the gated section, then the shaft opens to the cart
+    rocks.push({ x: 238, y: 130, w: 12, h: 620 });
+    rocks.push({ x: 450, y: 130, w: 12, h: 620 });
+
+    // Each channel draws its own sequence, so reading the shaft and picking a lane is
+    // the whole game. Every channel gets at least one toll and one real prize.
+    // Two tolls and two prizes per channel. One toll made every lane hugely positive
+    // (a x12 pour would break the economy it feeds); two keeps the band near x1-x4,
+    // so a good read is worth roughly quadruple a bad one rather than twelve times.
+    for (const ch of CHAN) {
+      const seq = [0.5, 0.5, pick([2, 3]), pick([3, 4])];
+      for (let i = seq.length - 1; i > 0; i--) {          // shuffle the order
+        const j = (Math.random() * (i + 1)) | 0;
+        [seq[i], seq[j]] = [seq[j], seq[i]];
+      }
+      seq.forEach((m, t) => gates.push({ x: ch.x + 6, w: ch.w - 12, y: TIERS[t], m }));
+    }
+
+    // Funnels have to reach from the shaft wall all the way to the cart lip, or the
+    // outer half of each side channel simply falls past and is lost.
+    ramps = [
+      { x0: 26,  y0: 742, x1: CART.x + 6,          y1: 818, dir:  1 },
+      { x0: 674, y0: 742, x1: CART.x + CART.w - 6, y1: 818, dir: -1 },
+    ];
+
+    // a light scatter inside each channel — enough that a pour spreads, not so much
+    // that the channels blend
+    for (const ch of CHAN) {
+      for (let i = 0; i < 3; i++) {
+        pegs.push({ x: ch.x + rnd(30, ch.w - 30), y: rnd(280, 700), r: rnd(5, 8) });
+      }
+    }
+    gates.forEach((g, i) => g.id = i);
+  }
+  buildShaft();
+
+  // -------------------------------------------------------------------- state
+  let S;
+  function reset(keepShaft) {
+    if (!keepShaft) buildShaft();
+    S = {
+      coins: [], parts: [], flashes: [],
+      chute: W / 2, carried: 900, toPour: 0, poured: 0,
+      banked: 0, lost: 0, pouring: false, done: false,
+      t: 0, spawnAcc: 0, shake: 0,
+    };
+    S.toPour = S.carried;
+  }
+  reset(true);
+
+  const liveValue = () => S.coins.reduce((a, c) => a + c.v, 0);
+
+  function spawn(n) {
+    for (let i = 0; i < n; i++) {
+      // Shaft full: stop spawning *this frame* and try again next. Clearing the queue
+      // here silently deleted whatever the player had left to pour.
+      if (S.coins.length >= CAP) break;
+      if (S.toPour <= 0) break;
+      S.toPour--;
+      S.poured++;
+      S.coins.push({
+        x: S.chute + rnd(-22, 22), y: 96, vx: rnd(-26, 26), vy: rnd(30, 90),
+        v: 1, r: 6.5, spin: rnd(0, 6.3), spinV: rnd(-8, 8), hit: {},
+      });
+    }
+  }
+
+  function burst(x, y, n, colors, spread = 190) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * 6.283, sp = rnd(spread * 0.3, spread);
+      S.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40,
+                     life: rnd(0.25, 0.6), r: rnd(1.6, 3.6), c: pick(colors) });
+    }
+  }
+
+  // -------------------------------------------------------------------- sim
+  function step(dt) {
+    S.t += dt;
+    if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 60);
+
+    if (S.pouring && S.toPour > 0) {
+      S.spawnAcc += dt * 260;                        // coins per second out of the chute
+      const n = Math.floor(S.spawnAcc);
+      if (n > 0) { S.spawnAcc -= n; spawn(n); }
+    }
+
+    for (const c of S.coins) {
+      c.vy += 1500 * dt;
+      c.vx *= 0.995;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.spin += c.spinV * dt;
+
+      if (c.x < 26) { c.x = 26; c.vx = Math.abs(c.vx) * 0.5; Snd.clink(); }
+      if (c.x > W - 26) { c.x = W - 26; c.vx = -Math.abs(c.vx) * 0.5; Snd.clink(); }
+
+      for (const p of pegs) {
+        const dx = c.x - p.x, dy = c.y - p.y, d = Math.hypot(dx, dy);
+        if (d < p.r + c.r && d > 0.001) {
+          const nx = dx / d, ny = dy / d;
+          c.x = p.x + nx * (p.r + c.r);
+          c.y = p.y + ny * (p.r + c.r);
+          const dot = c.vx * nx + c.vy * ny;
+          c.vx = (c.vx - 2 * dot * nx) * 0.5 + rnd(-11, 11);
+          c.vy = (c.vy - 2 * dot * ny) * 0.52;
+          Snd.clink();
+        }
+      }
+
+      for (const r of rocks) {
+        if (c.x < r.x - c.r || c.x > r.x + r.w + c.r) continue;
+        if (c.y < r.y - c.r || c.y > r.y + r.h + c.r) continue;
+        const fromLeft = c.x < r.x + r.w / 2;
+        c.x = fromLeft ? r.x - c.r : r.x + r.w + c.r;
+        c.vx = (fromLeft ? -1 : 1) * (Math.abs(c.vx) * 0.45 + 40);
+        Snd.clink();
+      }
+
+      for (const r of ramps) {
+        const lo = Math.min(r.x0, r.x1), hi = Math.max(r.x0, r.x1);
+        if (c.x < lo || c.x > hi) continue;
+        const k = (c.x - r.x0) / (r.x1 - r.x0);
+        const ry = r.y0 + (r.y1 - r.y0) * k;
+        if (c.y > ry - c.r && c.y < ry + 46) {
+          c.y = ry - c.r;
+          if (c.vy > 0) c.vy = -c.vy * 0.2;
+          c.vx += r.dir * 900 * dt;         // slide downhill toward the cart
+          if (Math.random() < 0.25) Snd.clink();
+        }
+      }
+
+      // gates are permeable: crossing the line once is what counts
+      for (const g of gates) {
+        if (c.hit[g.id]) continue;
+        if (c.y >= g.y && c.y - c.vy * dt < g.y && c.x > g.x && c.x < g.x + g.w) {
+          c.hit[g.id] = 1;
+          applyGate(c, g);
+          if (!S.coins.includes(c)) break;
+        }
+      }
+    }
+
+    // landing
+    for (const c of S.coins) {
+      if (c.y < CART.y) continue;
+      if (c.x > CART.x && c.x < CART.x + CART.w) {
+        S.banked += c.v;
+        burst(c.x, CART.y, 3, ["#e8c05a", "#fff3cf"], 120);
+        Snd.clink();
+      } else {
+        S.lost += c.v;
+        burst(c.x, CART.y + 20, 2, ["#6a6070"], 90);
+      }
+      c.gone = true;
+    }
+    S.coins = S.coins.filter(c => !c.gone && c.y < H + 60);
+
+    for (const p of S.parts) {
+      p.life -= dt; p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+    S.parts = S.parts.filter(p => p.life > 0);
+    for (const f of S.flashes) f.t += dt;
+    S.flashes = S.flashes.filter(f => f.t < 0.4);
+
+    if (S.pouring && !S.done && S.toPour <= 0 && S.coins.length === 0) {
+      S.done = true; S.pouring = false;
+      Snd.done(S.banked >= S.carried);
+      S.shake = 6;
+      pourBtn.disabled = true;
+      pourBtn.textContent = "Poured";
+    }
+  }
+
+  function applyGate(c, g) {
+    S.flashes.push({ x: c.x, y: g.y, m: g.m, t: 0 });
+    if (g.m >= 1) {
+      const extra = Math.round(g.m) - 1;
+      if (S.coins.length + extra <= CAP) {
+        // room on screen: make real coins, which is the whole point of the picture
+        for (let i = 0; i < extra; i++) {
+          S.coins.push({ x: c.x + rnd(-9, 9), y: g.y - rnd(2, 10),
+                         vx: c.vx + rnd(-150, 150), vy: c.vy * rnd(0.5, 0.9),
+                         v: c.v, r: c.r, spin: rnd(0, 6.3), spinV: rnd(-9, 9),
+                         hit: Object.assign({}, c.hit) });
+        }
+      } else {
+        c.v *= g.m;               // shaft is full: keep the number honest instead
+        c.r = Math.min(11, 6.5 + Math.log2(c.v) * 0.7);
+      }
+      burst(c.x, g.y, 5, ["#8ed07a", "#e8c05a", "#fff3cf"], 200);
+    } else {
+      // a toll takes roughly half of whatever passes through it
+      if (Math.random() < 0.5) {
+        c.gone = true;
+        burst(c.x, g.y, 5, ["#d1553f", "#7a3226"], 170);
+      }
+    }
+    Snd.gate(g.m);
+  }
+
+  // ------------------------------------------------------------------ drawing
+  const cv = document.getElementById("c");
+  const cx = cv.getContext("2d");
+
+  function draw() {
+    cx.clearRect(0, 0, W, H);
+    const bg = cx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#1b1622"); bg.addColorStop(1, "#0e0c12");
+    cx.fillStyle = bg; cx.fillRect(0, 0, W, H);
+
+    cx.save();
+    if (S.shake > 0.2) cx.translate(rnd(-1, 1) * S.shake, rnd(-1, 1) * S.shake);
+
+    // shaft walls
+    cx.fillStyle = "#1c1822"; cx.fillRect(0, 0, 26, H); cx.fillRect(W - 26, 0, 26, H);
+    cx.strokeStyle = "#2f2833"; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(26, 0); cx.lineTo(26, H); cx.moveTo(W - 26, 0); cx.lineTo(W - 26, H); cx.stroke();
+
+    for (const p of pegs) {
+      cx.fillStyle = "#3b3340";
+      cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 6.284); cx.fill();
+      cx.fillStyle = "#4d4356";
+      cx.beginPath(); cx.arc(p.x - p.r * 0.3, p.y - p.r * 0.3, p.r * 0.45, 0, 6.284); cx.fill();
+    }
+
+    for (const r of ramps) {
+      cx.strokeStyle = "#3a333f"; cx.lineWidth = 13; cx.lineCap = "round";
+      cx.beginPath(); cx.moveTo(r.x0, r.y0); cx.lineTo(r.x1, r.y1); cx.stroke();
+      cx.strokeStyle = "#4a4250"; cx.lineWidth = 4;
+      cx.beginPath(); cx.moveTo(r.x0, r.y0 - 4); cx.lineTo(r.x1, r.y1 - 4); cx.stroke();
+      cx.fillStyle = "#5d5468";
+      for (let i = 1; i < 5; i++) {                 // chevrons pointing at the cart
+        const k = i / 5, bx = r.x0 + (r.x1 - r.x0) * k, by = r.y0 + (r.y1 - r.y0) * k;
+        cx.beginPath();
+        cx.moveTo(bx - r.dir * 6, by - 12); cx.lineTo(bx + r.dir * 7, by - 5);
+        cx.lineTo(bx - r.dir * 6, by + 2); cx.closePath(); cx.fill();
+      }
+    }
+
+    for (const r of rocks) {
+      cx.fillStyle = "#3a333f";
+      cx.fillRect(r.x, r.y, r.w, r.h);
+      cx.fillStyle = "#4a4250";
+      cx.fillRect(r.x, r.y, r.w * 0.4, r.h);
+    }
+
+    for (const g of gates) {
+      const good = g.m >= 1;
+      const grd = cx.createLinearGradient(0, g.y - 13, 0, g.y + 13);
+      grd.addColorStop(0, good ? "#7fd06a" : "#e0654c");
+      grd.addColorStop(1, good ? "#3f8a4a" : "#8f3324");
+      cx.fillStyle = grd;
+      cx.fillRect(g.x, g.y - 13, g.w, 26);
+      cx.fillStyle = "rgba(255,255,255,.18)";
+      cx.fillRect(g.x, g.y - 13, g.w, 4);
+      cx.font = "bold 19px " + getComputedStyle(document.body).getPropertyValue("--body");
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.fillStyle = "rgba(0,0,0,.45)";
+      cx.fillText(good ? "×" + g.m : "TOLL", g.x + g.w / 2 + 1, g.y + 2);
+      cx.fillStyle = "#fff";
+      cx.fillText(good ? "×" + g.m : "TOLL", g.x + g.w / 2, g.y + 1);
+    }
+
+    // the cart
+    cx.fillStyle = "#2a2029";
+    cx.fillRect(CART.x - 10, CART.y, CART.w + 20, H - CART.y);
+    cx.fillStyle = "#8a7134";
+    cx.fillRect(CART.x, CART.y + 6, CART.w, H - CART.y - 6);
+    const fill = clamp(S.banked / Math.max(1, S.carried * 2), 0, 1);
+    cx.fillStyle = "#e8c05a";
+    cx.fillRect(CART.x + 4, CART.y + 10 + (H - CART.y - 14) * (1 - fill), CART.w - 8,
+                (H - CART.y - 14) * fill);
+    cx.strokeStyle = "#e8c05a"; cx.lineWidth = 3;
+    cx.strokeRect(CART.x, CART.y + 6, CART.w, H - CART.y - 6);
+
+    // chute
+    const cxx = S.chute;
+    cx.fillStyle = "#4a4250";
+    cx.beginPath();
+    cx.moveTo(cxx - 46, 36); cx.lineTo(cxx + 46, 36);
+    cx.lineTo(cxx + 26, 92); cx.lineTo(cxx - 26, 92); cx.closePath(); cx.fill();
+    cx.fillStyle = "#5d5468";
+    cx.fillRect(cxx - 46, 30, 92, 8);
+    cx.strokeStyle = "rgba(232,192,90,.45)"; cx.lineWidth = 2;
+    cx.setLineDash([5, 7]); cx.lineDashOffset = -S.t * 40;
+    cx.beginPath(); cx.moveTo(cxx, 96); cx.lineTo(cxx, H - 60); cx.stroke();
+    cx.setLineDash([]);
+
+    for (const c of S.coins) {
+      const w = Math.abs(Math.cos(c.spin)) * c.r + 1.4;
+      cx.fillStyle = "#8a7134";
+      cx.beginPath(); cx.ellipse(c.x, c.y, w, c.r, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "#e8c05a";
+      cx.beginPath(); cx.ellipse(c.x - 0.5, c.y - 0.7, w * 0.76, c.r * 0.8, 0, 0, 6.284); cx.fill();
+      if (c.v > 1) {
+        cx.fillStyle = "rgba(255,250,225,.9)";
+        cx.beginPath(); cx.arc(c.x, c.y, w * 0.3, 0, 6.284); cx.fill();
+      }
+    }
+
+    for (const p of S.parts) {
+      cx.globalAlpha = clamp(p.life * 2.6, 0, 1);
+      cx.fillStyle = p.c;
+      cx.fillRect(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r);
+    }
+    cx.globalAlpha = 1;
+
+    for (const f of S.flashes) {
+      const k = f.t / 0.4;
+      cx.globalAlpha = 1 - k;
+      cx.font = "bold " + (16 + k * 12).toFixed(0) + "px " + getComputedStyle(document.body).getPropertyValue("--body");
+      cx.textAlign = "center";
+      cx.fillStyle = f.m >= 1 ? "#b6f0a2" : "#ffab99";
+      cx.fillText(f.m >= 1 ? "×" + f.m : "−", f.x, f.y - 14 - k * 26);
+      cx.globalAlpha = 1;
+    }
+    cx.restore();
+
+    if (S.done) {
+      const good = S.banked >= S.carried;
+      cx.fillStyle = "rgba(11,9,16,.84)"; cx.fillRect(0, H / 2 - 90, W, 180);
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      cx.font = "44px " + getComputedStyle(document.body).getPropertyValue("--display");
+      cx.fillStyle = good ? "#e8c05a" : "#d1553f";
+      cx.fillText(good ? "CARRIED DOWN" : "A POOR POUR", W / 2, H / 2 - 30);
+      cx.font = "22px " + getComputedStyle(document.body).getPropertyValue("--body");
+      cx.fillStyle = "#e6dfd4";
+      cx.fillText(S.carried + " poured  →  " + Math.round(S.banked) + " landed", W / 2, H / 2 + 16);
+      cx.font = "15px " + getComputedStyle(document.body).getPropertyValue("--body");
+      cx.fillStyle = "#9a9089";
+      cx.fillText("×" + (S.banked / S.carried).toFixed(2) + " on what you brought", W / 2, H / 2 + 50);
+    }
+  }
+
+  // -------------------------------------------------------------------- input
+  let dragging = false;
+  const aim = ev => {
+    const r = cv.getBoundingClientRect();
+    const px = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) * (W / r.width);
+    S.chute = clamp(px, 60, W - 60);
+  };
+  cv.addEventListener("pointerdown", e => { Snd.wake(); dragging = true; aim(e); cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => { if (dragging) aim(e); });
+  cv.addEventListener("pointerup", e => { dragging = false; try { cv.releasePointerCapture(e.pointerId); } catch {} });
+
+  const $ = id => document.getElementById(id);
+  const pourBtn = $("pour");
+  pourBtn.addEventListener("click", () => {
+    Snd.wake();
+    if (S.done) return;
+    S.pouring = true;
+    pourBtn.disabled = true;
+    pourBtn.textContent = "Pouring…";
+    Snd.pour();
+  });
+  $("again").addEventListener("click", () => {
+    reset(true); pourBtn.disabled = false; pourBtn.textContent = "Pour";
+  });
+  $("layout").addEventListener("click", () => {
+    reset(false); pourBtn.disabled = false; pourBtn.textContent = "Pour";
+  });
+  const muteBtn = $("mute");
+  muteBtn.addEventListener("click", () => {
+    Snd.wake();
+    const on = Snd.toggle();
+    muteBtn.textContent = on ? "Sound on" : "Sound off";
+  });
+
+  const bankedEl = $("banked"), carriedEl = $("carried"), fallingEl = $("falling"),
+        lostEl = $("lost"), multEl = $("mult");
+  let lastBank = 0, bumpT = null;
+
+  // --------------------------------------------------------------------- loop
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.033);
+    last = now;
+    step(dt);
+    draw();
+    cv.classList.toggle("pouring", S.pouring);
+
+    bankedEl.textContent = Math.round(S.banked);
+    carriedEl.textContent = S.carried;
+    fallingEl.textContent = Math.round(liveValue() + S.toPour);
+    lostEl.textContent = Math.round(S.lost);
+    multEl.textContent = "×" + (S.banked / Math.max(1, S.carried)).toFixed(2);
+    if (S.banked !== lastBank) {
+      lastBank = S.banked;
+      bankedEl.classList.add("bump");
+      clearTimeout(bumpT);
+      bumpT = setTimeout(() => bankedEl.classList.remove("bump"), 90);
+    }
+    requestAnimationFrame(frame);
+  }
+  window.__pour = { get state() { return S; }, gates: () => gates };
+  requestAnimationFrame(frame);
+})();
+</script>
