@@ -114,21 +114,8 @@
   .card-cost { font-family: var(--data); font-size: 12px; color: var(--gold); font-variant-numeric: tabular-nums; }
   .card-desc { font-size: 11.5px; color: var(--ink-dim); line-height: 1.35; }
 
-  .satchel, .stall { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-                     border: 1px dashed #443b49; border-radius: 3px; padding: 9px 12px; }
-  .stall { border-style: solid; border-color: #3b3340;
-           background: linear-gradient(180deg, var(--stone-lit), var(--stone)); }
-  .buy { display: flex; align-items: center; gap: 6px;
-         background: var(--stone); border: 1px solid #3b3340; border-radius: 3px;
-         padding: 5px 10px; cursor: pointer; color: var(--ink); font-family: var(--body);
-         font-size: 12.5px; transition: transform .12s ease, border-color .12s ease; }
-  .buy:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--gold-dim); }
-  .buy:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-  .buy:disabled { opacity: 0.38; cursor: not-allowed; }
-  .buy-em { font-size: 17px; line-height: 1; }
-  .buy-price { font-family: var(--data); font-size: 11.5px; color: var(--gold);
-               font-variant-numeric: tabular-nums; }
-  .buy.counter { border-left: 3px solid var(--goblin); }
+  .satchel { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+             border: 1px dashed #443b49; border-radius: 3px; padding: 9px 12px; }
   .satchel-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-dim); }
   .slot { font-size: 19px; line-height: 1; background: var(--stone);
           border: 1px solid #3b3340; border-radius: 3px; padding: 5px 8px;
@@ -191,8 +178,8 @@
   /* A pass-through wrapper everywhere except short landscape, where it becomes the
      floating bottom tray. */
   .tray { display: contents; }
-  canvas, .btn, .card, .buy, .slot, .route { -webkit-tap-highlight-color: transparent; }
-  .hud, .rack, .stall, .satchel, .controls, .inspector { user-select: none; }
+  canvas, .btn, .card, .slot, .route { -webkit-tap-highlight-color: transparent; }
+  .hud, .rack, .satchel, .controls, .inspector { user-select: none; }
 
   /* ---- turn-your-phone nudge ---------------------------------------------
      Only ever shown on a small screen held upright. Landscape or desktop and
@@ -234,16 +221,14 @@
   .game.fs .readout-value { font-size: 19px; }
   .game.fs .readout-sub, .game.fs .readout-label { font-size: 9px; }
   .game.fs .card-desc,
-  .game.fs .buy span:nth-child(2) span,
   .game.fs .satchel-hint,
   .game.fs .insp-empty,
   .game.fs .insp-items,
   .game.fs .rotate-nudge { display: none; }
   .game.fs .card { padding: 5px 9px; min-width: 92px; flex: 1 1 92px; }
   .game.fs .card-name { font-size: 13px; }
-  .game.fs .rack, .game.fs .stall, .game.fs .satchel { gap: 6px; }
-  .game.fs .stall, .game.fs .satchel, .game.fs .inspector { padding: 5px 9px; }
-  .game.fs .buy { padding: 3px 7px; font-size: 11.5px; }
+  .game.fs .rack, .game.fs .satchel { gap: 6px; }
+  .game.fs .satchel, .game.fs .inspector { padding: 5px 9px; }
   .game.fs .insp-name { font-size: 15px; }
   .game.fs .controls { gap: 6px; }
   .game.fs .btn { padding: 4px 10px; font-size: 11px; }
@@ -267,17 +252,16 @@
     .game.fs .hud-tools { display: flex; margin-left: auto; }
 
     /* everything but coins and the units goes behind the Build toggle */
-    .game.fs .stall, .game.fs .satchel, .game.fs .inspector, .game.fs .controls { display: none; }
-    .game.fs.extras .stall, .game.fs.extras .satchel, .game.fs.extras .controls { display: flex; }
+    .game.fs .satchel, .game.fs .inspector, .game.fs .controls { display: none; }
+    .game.fs.extras .satchel, .game.fs.extras .controls { display: flex; }
     .game.fs.extras .satchel.empty { display: none; }
     .game.fs.extras .inspector { display: block; }
     .game.fs.extras .inspector.vacant { display: none; }
 
-    .game.fs .rack, .game.fs #stall, .game.fs #slots {
+    .game.fs .rack, .game.fs #slots {
       flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
     }
     .game.fs .rack::-webkit-scrollbar,
-    .game.fs #stall::-webkit-scrollbar,
     .game.fs #slots::-webkit-scrollbar { display: none; }
     /* the board is the only thing allowed to give up height; a squashed panel
        silently clips its own text */
@@ -289,8 +273,7 @@
                      flex-direction: row; align-items: baseline; gap: 6px; }
     .game.fs .card-name { font-size: 11px; }
     .game.fs .card-cost { font-size: 10.5px; }
-    .game.fs .stall, .game.fs .satchel, .game.fs .inspector { padding: 3px 8px; }
-    .game.fs .buy { flex: 0 0 auto; white-space: nowrap; }
+    .game.fs .satchel, .game.fs .inspector { padding: 3px 8px; }
     .game.fs .satchel-label { display: none; }
     .game.fs .insp-name { font-size: 13px; }
   }
@@ -302,7 +285,7 @@
 
   <header class="masthead">
     <h1 class="wordmark">Hoard</h1>
-    <span class="kicker">descent prototype &middot; v0.6</span>
+    <span class="kicker">descent prototype &middot; v0.9</span>
   </header>
 
   <div class="game" id="game">
@@ -355,15 +338,10 @@
     </div>
   </div>
 
-  <div class="stall">
-    <span class="satchel-label">Junk stall</span>
-    <div id="stall" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
-  </div>
-
   <div class="satchel">
     <span class="satchel-label">Satchel</span>
     <div id="slots" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
-    <span class="satchel-hint" id="satchel-hint">Junk drops when pursuers die. Click it to pick it up, then click a goblin to bolt it on.</span>
+    <span class="satchel-hint" id="satchel-hint">Junk drops when pursuers die &mdash; that is the only way to get it. Click it up, then click a goblin to bolt it on.</span>
   </div>
 
   <div class="controls">
@@ -394,14 +372,14 @@
         <span class="q">Is choosing between depth and breadth a real decision?</span>
       </li>
       <li>
-        <strong>Every threat ships with its answer, and the answer is never a dice roll.</strong>
-        The Leaper vaults the first goblin it meets unless the lane is spiked, and its counter is a
-        fusion rather than a new card &mdash; but every item is always buyable at the junk stall, so
-        drops are a discount rather than a gate. A new kind of pursuer is announced during the breather
-        before its first appearance, named alongside the thing that stops it. Enemies that bypass your
-        line outright are deliberately held back for deeper chambers, the way PvZ waits until the pool
-        levels to introduce anything that swims past you.
-        <span class="q">Does the re-solve loop land, or does it read as unfair?</span>
+        <strong>Goblins are the answer to enemies. Junk is only ever a bonus.</strong> Nothing is for
+        sale &mdash; junk drops from the dead and that is the only way to get any. So no counter can be
+        gated behind a drop, because counters are not items: a Leaper clears a rank-1 goblin and nothing
+        taller, so merging <em>anything</em> in that lane stops it. Nobody is told this. The Leaper
+        simply bounces off, sits down hard and sees stars, and ranked goblins are visibly bigger.
+        Threats that bypass your line outright are held back for deeper chambers, the way PvZ waits
+        for the pool levels to introduce anything that swims past you.
+        <span class="q">Does the rule teach itself, or does it need saying out loud?</span>
       </li>
       <li>
         <strong>Depth is a place, not a multiplier.</strong> Every fifth wave you pick a route down.
@@ -410,13 +388,14 @@
         <span class="q">Does a visible board change beat a stat penalty you can't see?</span>
       </li>
       <li>
-        <strong>There is finally something worth saving for.</strong> The Ballista costs 350 &mdash;
-        seven Chuckers &mdash; and pierces a whole lane.
+        <strong>Coins buy goblins and nothing else.</strong> With no shop, every coin is a placement or
+        a merge, and the Ballista at 350 &mdash; seven Chuckers &mdash; is the only thing worth going
+        without for.
         <span class="q">Does one genuinely expensive option create a real spend-or-wait decision?</span>
       </li>
     </ul>
 
-    <h2>The pursuers</h2>
+    <h2>The pursuers <span style="text-transform:none;letter-spacing:0;color:#7d7285;font-family:var(--body);font-size:12px;">&mdash; designer reference; the game never states any of the answers</span></h2>
     <div class="bestiary" id="bestiary"></div>
 
     <p style="font-size:13px; color:#9a9089; font-style:italic;">
@@ -470,6 +449,7 @@
   const BREAK_MIN = 0.50, BREAK_MAX = 0.65;
   const WAVE_MIN_AGE = 4, TRIGGER_DELAY = 2;
 
+  const LEAP_TIME = 0.5;   // seconds in the air clearing one goblin
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[(Math.random() * a.length) | 0];
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -479,11 +459,11 @@
   // Every item is always buyable from the stall. Drops are a discount, never a gate —
   // a counter you can only get from RNG is a threat with no answer.
   const ITEMS = {
-    helm:   { emoji: "⛑️", name: "Dented Helm",     blurb: "+160 hp",              price: 60 },
-    spring: { emoji: "🌀", name: "Rusty Spring",    blurb: "1.6× rate",            price: 90 },
-    bees:   { emoji: "🐝", name: "Jar of Bees",     blurb: "three-way shot",       price: 110 },
-    torch:  { emoji: "🔥", name: "Guttering Torch", blurb: "sets them alight",     price: 100 },
-    spikes: { emoji: "🔱", name: "Bundle of Spikes", blurb: "leapers land on it",  price: 70 },
+    helm:   { emoji: "⛑️", name: "Dented Helm",     blurb: "+160 hp" },
+    spring: { emoji: "🌀", name: "Rusty Spring",    blurb: "1.6× rate" },
+    bees:   { emoji: "🐝", name: "Jar of Bees",     blurb: "three-way shot" },
+    torch:  { emoji: "🔥", name: "Guttering Torch", blurb: "sets them alight" },
+    spikes: { emoji: "🔱", name: "Bundle of Spikes", blurb: "cuts whatever attacks it" },
   };
   const ITEM_KEYS = Object.keys(ITEMS);
 
@@ -552,14 +532,15 @@
 
   // Every pursuer that beats a static line has a fusion that answers it.
   const FOES = {
-    squire:   { name: "Squire",    pts: 1, weight: 60, from: 1, hp: 105, speed: 20, dps: 22, drop: 0.10,
+    squire:   { name: "Squire",    pts: 1, weight: 60, from: 1, hp: 105, speed: 20, dps: 22, drop: 0.16,
                 line: "Walks. Hits whatever is in front of it.", fix: "Anything at all." },
-    scout:    { name: "Scout",     pts: 2, weight: 34, from: 2, hp: 70,  speed: 44, dps: 16, drop: 0.24,
+    scout:    { name: "Scout",     pts: 2, weight: 34, from: 2, hp: 70,  speed: 44, dps: 16, drop: 0.32,
                 line: "Fast and flimsy. Arrives before you are ready.", fix: "Rate of fire — a Spring." },
-    knight:   { name: "Knight",    pts: 4, weight: 24, from: 3, hp: 340, speed: 15, dps: 28, drop: 0.26,
+    knight:   { name: "Knight",    pts: 4, weight: 24, from: 3, hp: 340, speed: 15, dps: 28, drop: 0.36,
                 line: "Slow, armoured, chews through walls.", fix: "Raw damage. Merge your Chuckers." },
-    leaper:   { name: "Leaper",    pts: 3, weight: 28, from: 2, hp: 120, speed: 26, dps: 20, drop: 0.34,
-                line: "Vaults clean over the first goblin it meets.", fix: "Spikes — it lands on them instead." },
+    leaper:   { name: "Leaper",    pts: 3, weight: 28, from: 2, hp: 120, speed: 26, dps: 20, drop: 0.44,
+                line: "Vaults clean over the first goblin it meets.",
+                fix: "Anything of rank 2 or better. It cannot clear a merged goblin." },
   };
   const FOE_KEYS = Object.keys(FOES);
 
@@ -681,7 +662,7 @@
       type, lane, x: W + 20, hp: d.hp, maxHp: d.hp, wave: S.wave,
       speed: d.speed * rnd(0.77, 1.23),
       burn: 0, burnT: 0, hitT: 0, bleeding: false, bob: rnd(0, 6.28),
-      leapt: false, leapT: 0,
+      leapt: false, leapT: 0, bonk: 0, leapFrom: 0, leapTo: 0,
     });
     S.waveHp += d.hp;
   }
@@ -850,6 +831,7 @@
       const d = FOES[f.type];
       f.bob += dt * 6;
       if (f.hitT > 0) f.hitT -= dt;
+      if (f.bonk > 0) f.bonk -= dt;
 
       if (f.burn > 0) {
         f.burnT -= dt;
@@ -863,23 +845,32 @@
 
       if (f.leapT > 0) {            // mid-vault, sailing over the line
         f.leapT -= dt;
-        f.x -= 150 * dt;
+        const k = clamp(1 - f.leapT / LEAP_TIME, 0, 1);
+        f.x = f.leapFrom + (f.leapTo - f.leapFrom) * k;
         continue;
       }
 
       const col = Math.floor((f.x - OX) / CELL);
       const wall = col >= 0 && col < COLS ? gobAt(col, f.lane) : null;
       if (wall) {
-        // Leaper vaults the first thing it meets — unless that lane is spiked.
-        if (f.type === "leaper" && !f.leapt && !laneHas(f.lane, "spikes")) {
+        // A Leaper clears a rank-1 goblin and nothing taller. Merging anything in
+        // the lane is the answer — no item, nothing to buy, nothing to roll for.
+        if (f.type === "leaper" && !f.leapt) {
           f.leapt = true;
-          f.leapT = 0.45;
-          continue;
-        }
-        if (f.type === "leaper" && !f.leapt && laneHas(f.lane, "spikes")) {
-          f.leapt = true;
-          hurt(f, 90, false);
-          S.puffs.push({ x: f.x, y: laneY(f.lane) + 48, t: 0, r: 40, kind: "steal" });
+          if (wall.tier < 2) {
+            // land clear of the cell it jumped, or the vault covers less than a
+            // tile and it comes down on the goblin it was trying to clear
+            f.leapT = LEAP_TIME;
+            f.leapFrom = f.x;
+            f.leapTo = OX + col * CELL - 26;
+            continue;
+          }
+          // Ran headlong into something too big to clear. Make the failure loud:
+          // this is the only lesson the mechanic ever teaches.
+          f.x += 30;
+          f.bonk = 0.5;
+          hurt(f, 30, false);
+          S.puffs.push({ x: f.x - 14, y: laneY(f.lane) + 44, t: 0, r: 46, kind: "bonk" });
         }
         const gp = cellOf(wall);
         wall.hp -= d.dps * dt;
@@ -947,7 +938,7 @@
     const tint = blendTints(g.roles);
     const squash = g.pop > 0 ? 1 + g.pop * 0.3 : 1;
     const lean = g.recoil > 0 ? -g.recoil * 40 : 0;
-    const grow = 1 + (g.tier - 1) * 0.13;
+    const grow = 1 + (g.tier - 1) * 0.19;   // rank is the counter, so rank must read
     const big = has(g, "barricade");
     const rw = (big ? 34 : 26) * squash * grow, rh = (big ? 36 : 28) * squash * grow;
 
@@ -1018,11 +1009,13 @@
     const tint = f.type === "scout" ? "#6d6475" : f.type === "knight" ? "#aab2c0"
                : f.type === "leaper" ? "#bda66f" : "#c9ced8";
     const scale = f.type === "knight" ? 1.22 : f.type === "scout" ? 0.9 : 1;
-    const lift = f.leapT > 0 ? -Math.sin((0.45 - f.leapT) / 0.45 * Math.PI) * 52 : 0;
+    const lift = f.leapT > 0 ? -Math.sin((LEAP_TIME - f.leapT) / LEAP_TIME * Math.PI) * 52 : 0;
+    const bonked = f.bonk > 0;
 
     cx.save();
     cx.translate(f.x, y + bob + lift);
     cx.scale(scale, scale);
+    if (bonked) cx.rotate(0.5 * Math.sin(f.bonk * 26) * f.bonk);   // knocked flat on its back
     if (f.hitT > 0) cx.globalAlpha = 0.6;
 
     cx.fillStyle = tint;
@@ -1058,6 +1051,11 @@
     if (f.burn > 0) {
       cx.font = "15px serif"; cx.textAlign = "center";
       cx.fillText("🔥", f.x, y - 34 + Math.sin(S.t * 14) * 2);
+    }
+    if (bonked) {
+      cx.font = "bold 15px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = "#e8c05a"; cx.textAlign = "center";
+      cx.fillText("✶ ✶", f.x, y - 36 - (0.5 - f.bonk) * 12);
     }
     const fr = clamp(f.hp / f.maxHp, 0, 1);
     if (fr < 1) {
@@ -1189,7 +1187,8 @@
     for (const p of S.puffs) {
       const a = 1 - p.t / 0.5;
       cx.globalAlpha = a;
-      cx.strokeStyle = p.kind === "boom" ? "#e08040" : p.kind === "steal" ? "#d1553f" : "#6a6070";
+      cx.strokeStyle = p.kind === "boom" ? "#e08040" : p.kind === "steal" ? "#d1553f"
+                     : p.kind === "bonk" ? "#e8c05a" : "#6a6070";
       cx.lineWidth = 3;
       cx.beginPath(); cx.arc(p.x, p.y, p.r * (1 - a) + 8, 0, 6.284); cx.stroke();
       cx.globalAlpha = 1;
@@ -1220,10 +1219,10 @@
         cx.fillStyle = "rgba(13,11,16,0.72)";
         cx.fillRect(W / 2 - 300, OY + 22, 600, 54);
         cx.fillStyle = "rgba(232,192,90,0.95)";
-        cx.fillText("NEW: " + f.name.toUpperCase() + " — " + f.line, W / 2, OY + 42);
-        cx.fillStyle = "#6fbf5b";
+        cx.fillText("NEW: " + f.name.toUpperCase(), W / 2, OY + 42);
+        cx.fillStyle = "#e6dfd4";
         cx.font = "15px 'Trebuchet MS', sans-serif";
-        cx.fillText("Answer: " + f.fix + "  ·  buy it at the junk stall below", W / 2, OY + 64);
+        cx.fillText(f.line, W / 2, OY + 64);
       }
     }
     if (S.over) {
@@ -1394,7 +1393,7 @@
       ? "Click a goblin to bolt on the " + ITEMS[S.satchel[S.selItem]].name + "."
       : S.satchel.length
         ? "Click an item, then a goblin. Six per goblin."
-        : "Junk drops when pursuers die. Click it to pick it up, then click a goblin to bolt it on.";
+        : "Junk drops when pursuers die — that is the only way to get it. Click it up, then click a goblin to bolt it on.";
   }
 
   // What a given piece of junk actually does on a given goblin, in words. The emoji
@@ -1408,8 +1407,7 @@
       case "bees":   return has(g, "chucker") ? "Throws a three-way spread" : null;
       case "torch":  return has(g, "barricade") ? "Burns whatever attacks it"
                           : shoots ? "Sets them alight — burn damage over time" : null;
-      case "spikes": return "Leapers in this lane land on it for 90, instead of vaulting"
-                          + (has(g, "barricade") ? "; also cuts attackers" : "");
+      case "spikes": return "Cuts anything that attacks it, 10 a second";
       default:       return null;
     }
   }
@@ -1501,31 +1499,6 @@
     renderInspector();
   });
 
-  const stallEl = document.getElementById("stall");
-  const COUNTERS = new Set(["spikes"]);
-  function renderStall() {
-    stallEl.innerHTML = "";
-    for (const k of ITEM_KEYS) {
-      const it = ITEMS[k];
-      const b = document.createElement("button");
-      b.className = "buy" + (COUNTERS.has(k) ? " counter" : "");
-      b.type = "button";
-      b.disabled = S.coins < it.price || S.satchel.length >= 10;
-      b.title = it.name + " — " + it.blurb;
-      b.innerHTML = '<span class="buy-em">' + it.emoji + "</span>" +
-                    "<span>" + it.name + "<br><span style='color:#9a9089;font-size:11px'>" +
-                      it.blurb + "</span></span>" +
-                    '<span class="buy-price">' + it.price + "</span>";
-      b.addEventListener("click", () => {
-        if (S.coins < it.price || S.satchel.length >= 10) return;
-        S.coins -= it.price;
-        S.satchel.push(k);
-        renderSlots(); renderStall();
-      });
-      stallEl.appendChild(b);
-    }
-  }
-
   const hzEl = document.getElementById("hud-hazards");
   function renderHazards() {
     hzEl.innerHTML = "";
@@ -1559,7 +1532,7 @@
   const elChamber = document.getElementById("hud-chamber");
   const elStatus = document.getElementById("hud-status");
 
-  function renderAll() { renderRack(); renderSlots(); renderStall(); renderHazards(); renderInspector(); }
+  function renderAll() { renderRack(); renderSlots(); renderHazards(); renderInspector(); }
 
   document.getElementById("restart").addEventListener("click", () => {
     document.getElementById("descent").classList.remove("on");
@@ -1651,9 +1624,8 @@
       : S.phase === "breather" ? "regrouping"
       : S.foes.length + " closing in";
 
-    const sig = Object.keys(UNITS).map(k => S.coins >= UNITS[k].cost).join("") + "|" +
-                ITEM_KEYS.map(k => S.coins >= ITEMS[k].price).join("");
-    if (sig !== affordSig) { affordSig = sig; renderRack(); renderStall(); }
+    const sig = Object.keys(UNITS).map(k => S.coins >= UNITS[k].cost).join("");
+    if (sig !== affordSig) { affordSig = sig; renderRack(); }
 
     const g = S.selGob;
     const isig = g && g.hp > 0 ? g.type + g.tier + g.items.join() + Math.round(g.hp) : "none";
