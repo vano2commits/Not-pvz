@@ -125,8 +125,16 @@
   })();
 
   const W = 700, H = 900;
-  const CAP = 620;                 // live coins on screen; beyond this, value scales instead
-  const CART = { x: 250, w: 200, y: 830 };
+  // Fewer, bigger, solid pieces that shoulder each other around. A cloud of small
+  // sprites passing through one another reads as spray; a smaller number of chunky
+  // ones that collide reads as gold.
+  const R = 11;
+  const CAP = 300;
+  const CART = { x: 258, w: 184, y: 824 };
+
+  const CSS = getComputedStyle(document.body);
+  const FONT = CSS.getPropertyValue("--body") || "sans-serif";
+  const DISPLAY = CSS.getPropertyValue("--display") || "sans-serif";
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -238,8 +246,8 @@
     // Funnels have to reach from the shaft wall all the way to the cart lip, or the
     // outer half of each side channel simply falls past and is lost.
     ramps = [
-      { x0: 26,  y0: 742, x1: CART.x + 6,          y1: 818, dir:  1 },
-      { x0: 674, y0: 742, x1: CART.x + CART.w - 6, y1: 818, dir: -1 },
+      { x0: 26,  y0: 726, x1: CART.x + 4,          y1: 822, dir:  1 },
+      { x0: 674, y0: 726, x1: CART.x + CART.w - 4, y1: 822, dir: -1 },
     ];
 
     // a light scatter inside each channel — enough that a pour spreads, not so much
@@ -259,7 +267,7 @@
     if (!keepShaft) buildShaft();
     S = {
       coins: [], parts: [], flashes: [],
-      chute: W / 2, carried: 900, toPour: 0, poured: 0,
+      chute: W / 2, carried: 480, toPour: 0, poured: 0,
       banked: 0, lost: 0, pouring: false, done: false,
       t: 0, spawnAcc: 0, shake: 0,
     };
@@ -278,8 +286,8 @@
       S.toPour--;
       S.poured++;
       S.coins.push({
-        x: S.chute + rnd(-22, 22), y: 96, vx: rnd(-26, 26), vy: rnd(30, 90),
-        v: 1, r: 6.5, spin: rnd(0, 6.3), spinV: rnd(-8, 8), hit: {},
+        x: S.chute + rnd(-16, 16), y: 96, vx: rnd(-18, 18), vy: rnd(40, 90),
+        v: 1, r: R, spin: rnd(0, 6.3), spinV: rnd(-8, 8), hit: {}, py: 96,
       });
     }
   }
@@ -298,14 +306,15 @@
     if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 60);
 
     if (S.pouring && S.toPour > 0) {
-      S.spawnAcc += dt * 260;                        // coins per second out of the chute
+      S.spawnAcc += dt * 200;                        // coins per second out of the chute
       const n = Math.floor(S.spawnAcc);
       if (n > 0) { S.spawnAcc -= n; spawn(n); }
     }
 
     for (const c of S.coins) {
-      c.vy += 1500 * dt;
-      c.vx *= 0.995;
+      c.vy += 760 * dt;
+      c.vx *= 0.992;
+      if (c.vy > 620) c.vy = 620;
       c.x += c.vx * dt;
       c.y += c.vy * dt;
       c.spin += c.spinV * dt;
@@ -343,7 +352,7 @@
         if (c.y > ry - c.r && c.y < ry + 46) {
           c.y = ry - c.r;
           if (c.vy > 0) c.vy = -c.vy * 0.2;
-          c.vx += r.dir * 900 * dt;         // slide downhill toward the cart
+          c.vx += r.dir * 640 * dt;         // slide downhill toward the cart
           if (Math.random() < 0.25) Snd.clink();
         }
       }
@@ -359,9 +368,52 @@
       }
     }
 
+    // ---- coin against coin. This is what makes the pour feel like a mass of solid
+    // objects instead of a spray: they shoulder each other, jam in the funnel and
+    // heap up in the cart. Uniform grid so it stays cheap at a few hundred pieces.
+    const CELL = R * 2.2;
+    const grid = new Map();
+    for (const c of S.coins) {
+      const k = ((c.x / CELL) | 0) + "," + ((c.y / CELL) | 0);
+      let b = grid.get(k);
+      if (!b) grid.set(k, b = []);
+      b.push(c);
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      for (const c of S.coins) {
+        const gx = (c.x / CELL) | 0, gy = (c.y / CELL) | 0;
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          const b = grid.get((gx + ox) + "," + (gy + oy));
+          if (!b) continue;
+          for (const d of b) {
+            if (d === c) continue;
+            let dx = d.x - c.x, dy = d.y - c.y;
+            let dist = Math.hypot(dx, dy);
+            const min = c.r + d.r;
+            if (dist >= min || dist === 0) continue;
+            const nx = dx / dist, ny = dy / dist;
+            const push = (min - dist) * 0.5;
+            c.x -= nx * push; c.y -= ny * push;
+            d.x += nx * push; d.y += ny * push;
+            const rel = (d.vx - c.vx) * nx + (d.vy - c.vy) * ny;
+            if (rel < 0) {
+              const j = rel * 0.55;          // low restitution — gold does not bounce
+              c.vx += nx * j; c.vy += ny * j;
+              d.vx -= nx * j; d.vy -= ny * j;
+              if (Math.abs(rel) > 130) Snd.clink();
+            }
+          }
+        }
+      }
+    }
+    // settle: a piece that has stopped moving stops jittering
+    for (const c of S.coins) {
+      if (Math.abs(c.vx) < 7 && c.vy > -4 && c.vy < 16) { c.vx *= 0.72; c.vy *= 0.88; }
+    }
+
     // landing
     for (const c of S.coins) {
-      if (c.y < CART.y) continue;
+      if (c.y < CART.y + 26) continue;
       if (c.x > CART.x && c.x < CART.x + CART.w) {
         S.banked += c.v;
         burst(c.x, CART.y, 3, ["#e8c05a", "#fff3cf"], 120);
@@ -404,7 +456,7 @@
         }
       } else {
         c.v *= g.m;               // shaft is full: keep the number honest instead
-        c.r = Math.min(11, 6.5 + Math.log2(c.v) * 0.7);
+        c.r = R * (1 + Math.min(0.6, Math.log2(c.v) * 0.13));
       }
       burst(c.x, g.y, 5, ["#8ed07a", "#e8c05a", "#fff3cf"], 200);
     } else {
@@ -420,6 +472,17 @@
   // ------------------------------------------------------------------ drawing
   const cv = document.getElementById("c");
   const cx = cv.getContext("2d");
+
+  function roundRect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    cx.beginPath();
+    cx.moveTo(x + r, y);
+    cx.arcTo(x + w, y, x + w, y + h, r);
+    cx.arcTo(x + w, y + h, x, y + h, r);
+    cx.arcTo(x, y + h, x, y, r);
+    cx.arcTo(x, y, x + w, y, r);
+    cx.closePath();
+  }
 
   function draw() {
     cx.clearRect(0, 0, W, H);
@@ -443,11 +506,11 @@
     }
 
     for (const r of ramps) {
-      cx.strokeStyle = "#3a333f"; cx.lineWidth = 13; cx.lineCap = "round";
+      cx.strokeStyle = "#6b4e2c"; cx.lineWidth = 22; cx.lineCap = "round";
       cx.beginPath(); cx.moveTo(r.x0, r.y0); cx.lineTo(r.x1, r.y1); cx.stroke();
-      cx.strokeStyle = "#4a4250"; cx.lineWidth = 4;
-      cx.beginPath(); cx.moveTo(r.x0, r.y0 - 4); cx.lineTo(r.x1, r.y1 - 4); cx.stroke();
-      cx.fillStyle = "#5d5468";
+      cx.strokeStyle = "#9c7643"; cx.lineWidth = 8;
+      cx.beginPath(); cx.moveTo(r.x0, r.y0 - 6); cx.lineTo(r.x1, r.y1 - 6); cx.stroke();
+      cx.fillStyle = "#c49a5e";
       for (let i = 1; i < 5; i++) {                 // chevrons pointing at the cart
         const k = i / 5, bx = r.x0 + (r.x1 - r.x0) * k, by = r.y0 + (r.y1 - r.y0) * k;
         cx.beginPath();
@@ -457,10 +520,13 @@
     }
 
     for (const r of rocks) {
-      cx.fillStyle = "#3a333f";
-      cx.fillRect(r.x, r.y, r.w, r.h);
-      cx.fillStyle = "#4a4250";
-      cx.fillRect(r.x, r.y, r.w * 0.4, r.h);
+      const rad = Math.min(r.w, r.h) / 2;
+      cx.fillStyle = "#7a5a34";
+      roundRect(r.x, r.y, r.w, r.h, rad); cx.fill();
+      cx.fillStyle = "#9c7643";
+      roundRect(r.x + 2, r.y + 2, Math.max(3, r.w * 0.42), r.h - 4, Math.max(2, rad - 2)); cx.fill();
+      cx.fillStyle = "rgba(0,0,0,.22)";
+      roundRect(r.x + r.w * 0.62, r.y + 3, Math.max(2, r.w * 0.3), r.h - 6, Math.max(2, rad - 3)); cx.fill();
     }
 
     for (const g of gates) {
@@ -468,11 +534,13 @@
       const grd = cx.createLinearGradient(0, g.y - 13, 0, g.y + 13);
       grd.addColorStop(0, good ? "#7fd06a" : "#e0654c");
       grd.addColorStop(1, good ? "#3f8a4a" : "#8f3324");
+      cx.fillStyle = "#3d2f16";
+      roundRect(g.x - 2, g.y - 17, g.w + 4, 34, 8); cx.fill();
       cx.fillStyle = grd;
-      cx.fillRect(g.x, g.y - 13, g.w, 26);
-      cx.fillStyle = "rgba(255,255,255,.18)";
-      cx.fillRect(g.x, g.y - 13, g.w, 4);
-      cx.font = "bold 19px " + getComputedStyle(document.body).getPropertyValue("--body");
+      roundRect(g.x, g.y - 15, g.w, 30, 7); cx.fill();
+      cx.fillStyle = "rgba(255,255,255,.2)";
+      roundRect(g.x + 3, g.y - 12, g.w - 6, 6, 3); cx.fill();
+      cx.font = "bold 21px " + FONT;
       cx.textAlign = "center"; cx.textBaseline = "middle";
       cx.fillStyle = "rgba(0,0,0,.45)";
       cx.fillText(good ? "×" + g.m : "TOLL", g.x + g.w / 2 + 1, g.y + 2);
@@ -505,15 +573,35 @@
     cx.beginPath(); cx.moveTo(cxx, 96); cx.lineTo(cxx, H - 60); cx.stroke();
     cx.setLineDash([]);
 
+    // streaks first, so they sit behind the pieces
     for (const c of S.coins) {
-      const w = Math.abs(Math.cos(c.spin)) * c.r + 1.4;
-      cx.fillStyle = "#8a7134";
+      const sp = Math.hypot(c.vx, c.vy);
+      if (sp < 420) continue;
+      const k = Math.min(1, (sp - 420) / 900);
+      cx.strokeStyle = "rgba(232,192,90," + (0.16 + k * 0.3) + ")";
+      cx.lineWidth = c.r * 1.5;
+      cx.lineCap = "round";
+      cx.beginPath();
+      cx.moveTo(c.x, c.y);
+      cx.lineTo(c.x - c.vx * 0.028, c.y - c.vy * 0.028);
+      cx.stroke();
+    }
+    for (const c of S.coins) {
+      const w = Math.max(2.6, Math.abs(Math.cos(c.spin)) * c.r);
+      cx.fillStyle = "#5c481c";                                  // outline
+      cx.beginPath(); cx.ellipse(c.x, c.y, w + 1.8, c.r + 1.8, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "#a8801f";                                  // edge
       cx.beginPath(); cx.ellipse(c.x, c.y, w, c.r, 0, 0, 6.284); cx.fill();
       cx.fillStyle = "#e8c05a";
-      cx.beginPath(); cx.ellipse(c.x - 0.5, c.y - 0.7, w * 0.76, c.r * 0.8, 0, 0, 6.284); cx.fill();
-      if (c.v > 1) {
-        cx.fillStyle = "rgba(255,250,225,.9)";
-        cx.beginPath(); cx.arc(c.x, c.y, w * 0.3, 0, 6.284); cx.fill();
+      cx.beginPath(); cx.ellipse(c.x, c.y - 1, w * 0.74, c.r * 0.76, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "#f4d685";
+      cx.beginPath(); cx.ellipse(c.x - w * 0.12, c.y - c.r * 0.24, w * 0.44, c.r * 0.4, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "rgba(255,252,235,.75)";                    // glint
+      cx.beginPath(); cx.ellipse(c.x - w * 0.26, c.y - c.r * 0.36, w * 0.2, c.r * 0.2, -0.5, 0, 6.284); cx.fill();
+      if (c.v > 2.5) {                      // fat pieces get a brighter rim, not a label
+        cx.strokeStyle = "rgba(255,246,210,.55)";
+        cx.lineWidth = 1.6;
+        cx.beginPath(); cx.ellipse(c.x, c.y, w * 0.86, c.r * 0.88, 0, 0, 6.284); cx.stroke();
       }
     }
 
@@ -527,7 +615,7 @@
     for (const f of S.flashes) {
       const k = f.t / 0.4;
       cx.globalAlpha = 1 - k;
-      cx.font = "bold " + (16 + k * 12).toFixed(0) + "px " + getComputedStyle(document.body).getPropertyValue("--body");
+      cx.font = "bold " + (16 + k * 12).toFixed(0) + "px " + FONT;
       cx.textAlign = "center";
       cx.fillStyle = f.m >= 1 ? "#b6f0a2" : "#ffab99";
       cx.fillText(f.m >= 1 ? "×" + f.m : "−", f.x, f.y - 14 - k * 26);
@@ -539,13 +627,13 @@
       const good = S.banked >= S.carried;
       cx.fillStyle = "rgba(11,9,16,.84)"; cx.fillRect(0, H / 2 - 90, W, 180);
       cx.textAlign = "center"; cx.textBaseline = "middle";
-      cx.font = "44px " + getComputedStyle(document.body).getPropertyValue("--display");
+      cx.font = "44px " + DISPLAY;
       cx.fillStyle = good ? "#e8c05a" : "#d1553f";
       cx.fillText(good ? "CARRIED DOWN" : "A POOR POUR", W / 2, H / 2 - 30);
-      cx.font = "22px " + getComputedStyle(document.body).getPropertyValue("--body");
+      cx.font = "22px " + FONT;
       cx.fillStyle = "#e6dfd4";
       cx.fillText(S.carried + " poured  →  " + Math.round(S.banked) + " landed", W / 2, H / 2 + 16);
-      cx.font = "15px " + getComputedStyle(document.body).getPropertyValue("--body");
+      cx.font = "15px " + FONT;
       cx.fillStyle = "#9a9089";
       cx.fillText("×" + (S.banked / S.carried).toFixed(2) + " on what you brought", W / 2, H / 2 + 50);
     }
