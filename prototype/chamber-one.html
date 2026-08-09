@@ -309,15 +309,18 @@
   // PvZ 1-1 is a ONE lane level. 1-2 is three. Five lanes do not arrive until the
   // player can defend five. Handing a beginner the full board is what made this
   // unwinnable: heroes walked into lanes there was never money to cover.
-  const OPEN_ROWS = [1, 2, 3];
+  const OPEN_ROWS = [0, 1, 2, 3, 4];
   const isOpen = r => OPEN_ROWS.includes(r);
 
   // 1-1 also starts you on 150 sun against the usual 50 — triple. The opening is
   // meant to be furnished, not scraped together.
-  const START_COINS = 320;
+  const START_COINS = 350;
+  // Short enough that you cannot personally police five lanes. This is what gives
+  // the Hoarder a job: on three lanes nothing was ever missed, so gathering was
+  // worthless. Attention is the bottleneck the Hoarder buys you out of.
+  const COIN_LIFE = 6.5;
   // No passive income at all. Every coin in the level was carried in by somebody who
   // died for it, so earning is downstream of killing and there is nothing to idle for.
-  const COIN_LIFE = 11;
   const MAX_TIER = 3;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -336,15 +339,16 @@
 
   const UNITS = {
     chucker:   { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", desc: "Throws rocks down the lane." },
-    hoarder:   { name: "Hoarder",   cost: 50,  hp: 95,  tint: "#c9d45f", desc: "Its lane pays 60% more, and it gathers without a click." },
+    hoarder:   { name: "Hoarder",   cost: 50,  hp: 95,  tint: "#c9d45f", desc: "Gathers its whole lane. That lane also pays 75% more." },
     barricade: { name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", desc: "Doesn't fight. Won't move." },
   };
 
   const FOES = {
     // `pts` is the wave-point value, straight out of the original's table where a
     // Basic is 1 and a Conehead is 2. It also decides how much a spawn "uses up" a lane.
-    squire: { name: "Squire", hp: 110, speed: 24, dps: 22, drop: 0.20, purse: 38, pts: 1 },
-    scout:  { name: "Scout",  hp: 74,  speed: 46, dps: 16, drop: 0.30, purse: 30, pts: 2 },
+    squire:   { name: "Squire",   hp: 110, speed: 24, dps: 22, drop: 0.20, purse: 38, pts: 1 },
+    scout:    { name: "Scout",    hp: 74,  speed: 46, dps: 16, drop: 0.30, purse: 30, pts: 2 },
+    sergeant: { name: "Sergeant", hp: 290, speed: 20, dps: 30, drop: 0.34, purse: 62, pts: 2 },
   };
 
   // Hand-authored, not generated. Six waves, each with a shape.
@@ -354,15 +358,15 @@
   // Types are authored; lanes are not. The original weights lane choice against
   // wherever it has already been sending things, which is what stops three lanes
   // opening at once on a board you cannot yet cover.
+  const S_ = "squire", C_ = "scout", G_ = "sergeant";
   const WAVES = [
-    { name: "First light",   list: ["squire","squire"] },
-    { name: "They regroup",  list: ["squire","squire","squire"] },
-    { name: "Outriders",     list: ["squire","squire","scout","squire"] },
-    { name: "Pressing in",   list: ["squire","squire","scout","squire","scout"] },
-    { name: "The long push", list: ["squire","squire","squire","scout","scout","squire","squire"] },
+    { name: "First light",   list: [S_,S_,S_] },
+    { name: "They regroup",  list: [S_,S_,S_,S_,S_] },
+    { name: "Outriders",     list: [S_,S_,C_,S_,S_,C_,S_] },
+    { name: "Armour up",     list: [S_,S_,C_,G_,S_,S_,C_,S_,G_] },
+    { name: "The long push", list: [S_,C_,S_,G_,S_,S_,C_,G_,S_,C_,S_,S_] },
     // Final Wave: the original guarantees one of every type the level can show.
-    { name: "Last of them",  list: ["squire","scout","squire","squire","scout","squire",
-                                    "squire","scout","squire","squire"], final: true },
+    { name: "Last of them",  list: [S_,S_,C_,G_,S_,S_,C_,S_,G_,S_,C_,S_,G_,S_,C_,S_], final: true },
   ];
 
   // ===================================================================== state
@@ -378,7 +382,7 @@
       satchel: [], queue: [],
       selUnit: null, selItem: null, selGob: null,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
-      over: false, won: false, paused: false, t: 0, spawned: 0, killed: 0,
+      over: false, won: false, paused: false, t: 0, spawned: 0, killed: 0, rotted: 0,
     };
   }
   newRun();
@@ -429,7 +433,7 @@
     if (S.waveIx >= WAVES.length) { victory(); return; }
     const w = WAVES[S.waveIx];
     let t = 0;
-    const gap = Math.max(0.7, 1.9 - S.waveIx * 0.18);
+    const gap = Math.max(0.55, 1.7 - S.waveIx * 0.19);
     S.queue = w.list.map(type => {
       t += rnd(gap * 0.65, gap * 1.5);
       return { type, at: t };
@@ -513,7 +517,7 @@
       }
       if (!S.queue.length && !S.foes.length) {
         S.phase = "breath";
-        S.phaseT = S.waveIx >= WAVES.length - 1 ? 0.6 : 4.5;
+        S.phaseT = S.waveIx >= WAVES.length - 1 ? 0.6 : 3.2;
       }
     } else if (S.phase === "breath") {
       S.phaseT -= dt;
@@ -553,7 +557,10 @@
       // A magnet reads better as a direct pull than as an applied force — a coin lying
       // on the floor has its velocity damped every frame, which eats the force.
       if (g.type === "hoarder") {
-        const reach = 150 * RANK_POWER(g.tier);
+        // Whole lane. A radius never worked: kills happen up the board by the
+        // Chuckers, Hoarders sit at the back, and nothing was ever in range — an
+        // A/B run recovered exactly zero gold.
+        const reach = COLS * CELL;
         for (const c of S.loot) {
           if (c.lane !== g.row || c.taken) continue;
           if (Math.abs((p.x + 48) - c.x) > reach) continue;
@@ -699,7 +706,7 @@
       }
       if (c.rest) { c.vx *= 0.88; c.x += c.vx * dt; }
       c.life -= dt;
-      if (c.life <= 0) c.taken = true;
+      if (c.life <= 0) { S.rotted += c.value; c.taken = true; }
     }
     S.loot = S.loot.filter(c => !c.taken);
 
@@ -724,7 +731,7 @@
   // level, so they are worth the physics.
   function spillPurse(f) {
     const rich = S.goblins.some(g => g.type === "hoarder" && g.row === f.lane && g.hp > 0);
-    const total = Math.round(FOES[f.type].purse * (rich ? 1.6 : 1));
+    const total = Math.round(FOES[f.type].purse * (rich ? 1.75 : 1));
     const n = 2 + (Math.random() < 0.5 ? 1 : 0);
     const each = Math.round(total / n);
     for (let i = 0; i < n; i++) {
@@ -867,8 +874,9 @@
   function drawFoe(f) {
     const y = laneY(f.lane) + 54;
     const bob = Math.sin(f.bob) * (f.type === "scout" ? 3.4 : 2.2);
-    const tint = f.type === "scout" ? "#8d8496" : "#c9ced8";
-    const scale = f.type === "scout" ? 0.9 : 1;
+    const tint = f.type === "scout" ? "#8d8496"
+               : f.type === "sergeant" ? "#b98a4e" : "#c9ced8";
+    const scale = f.type === "scout" ? 0.9 : f.type === "sergeant" ? 1.16 : 1;
     const sq = f.squash > 0 ? ease(clamp(f.squash, 0, 1)) : 0;
 
     cx.fillStyle = "rgba(0,0,0,.3)";
@@ -903,6 +911,14 @@
       cx.fillStyle = flat || "#5a5560";
       cx.fillRect(-9, 26, 6, 8 + Math.sin(f.bob) * 3);
       cx.fillRect(3, 26, 6, 8 - Math.sin(f.bob) * 3);
+      if (f.type === "sergeant" && !f.bleeding) {      // a hammered-on breastplate
+        cx.fillStyle = flat || "#8a6234";
+        cx.beginPath();
+        cx.moveTo(-10, -4); cx.lineTo(10, -4); cx.lineTo(8, 16); cx.lineTo(-8, 16);
+        cx.closePath(); cx.fill();
+        cx.fillStyle = flat || "#d3a468";
+        cx.fillRect(-10, -4, 20, 3);
+      }
     };
 
     paint(null);
@@ -1024,6 +1040,16 @@
       cx.fillStyle = "#5b5464";
       cx.beginPath(); cx.ellipse(OX + 22, yy + 2, 15, 4, 0, 0, 6.284); cx.fill();
       cx.globalAlpha = 1;
+    }
+
+    for (const g of S.goblins) {
+      if (g.type !== "hoarder" || g.hp <= 0) continue;
+      const p = cellOf(g);
+      const grd = cx.createLinearGradient(OX, 0, OX + COLS * CELL, 0);
+      grd.addColorStop(0, "rgba(201,212,95,.13)");
+      grd.addColorStop(1, "rgba(201,212,95,.02)");
+      cx.fillStyle = grd;
+      cx.fillRect(OX, p.y + 5, COLS * CELL, CELL - 10);
     }
 
     S.goblins.forEach(drawGoblin);
