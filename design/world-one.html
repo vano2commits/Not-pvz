@@ -213,9 +213,10 @@
     the caravan stole something that matters and nobody knows which thing it is.
   </p>
   <p>
-    The thing that makes it not-a-reskin is <strong>merging</strong>. Every goblin can be folded into
-    another. Same kind and rank raises rank; different kinds produce a hybrid that does both jobs. Your
-    board is never finished, and the answer to a new threat is always another goblin, never a shop.
+    The thing that makes it not-a-reskin is <strong>fusion</strong>. Three goblins are for sale and
+    nothing else; everything past that is made by dropping one goblin onto another until up to three
+    share a body. Your board is never finished, and the answer to a new threat is always another
+    goblin, never a shop.
   </p>
 
   <div class="note good">
@@ -260,17 +261,34 @@
 
   <h2><span class="n">03</span> The core loop</h2>
   <ol>
-    <li><strong>Coins accrue</strong> from the sky and from Hoarder goblins. Free income decays as the
-      run goes deeper, so built economy has to take over. <span class="tag built">built</span></li>
-    <li><strong>Place goblins</strong> in a 9&times;5 grid. Coins buy goblins and nothing else.</li>
-    <li><strong>Waves arrive</strong> on a 25&ndash;31s timer, or two seconds after you break the
-      current one below a threshold re-rolled each wave between 50% and 65% health. Killing fast pulls
-      the game forward. <span class="tag built">built</span></li>
-    <li><strong>Junk drops</strong> from the dead &mdash; the only way to get any &mdash; and bolts onto
-      goblins for pure upside. <span class="tag built">built</span></li>
-    <li><strong>Merge</strong> to answer what the waves are doing to you.</li>
+    <li><strong>Coins fall from the heroes you kill.</strong> Nothing accrues from the sky and nothing
+      needs collecting &mdash; a purse spills where the hero died and walks itself to the cart.
+      <span class="tag built">built</span></li>
+    <li><strong>Place goblins</strong> in a 7&times;5 grid. Coins buy goblins and nothing else.
+      <span class="tag built">built</span></li>
+    <li><strong>Dig for the rest.</strong> The rock is visibly richer toward the far end, so a Digger's
+      worth is decided by how far forward you dare stand it, and its shaft deepens the longer it
+      survives. The gradient is continuous &mdash; no tiles, no lottery.
+      <span class="tag built">built</span></li>
+    <li><strong>Waves arrive</strong> when the board is clear, plus a breather long enough to spend a
+      purse in. <span class="tag built">built</span></li>
+    <li><strong>Fuse</strong> to answer what the waves are doing to you.
+      <span class="tag built">built</span></li>
     <li><strong>Descend</strong>, take a hazard, repeat. Something reaches the cart, the run ends.</li>
   </ol>
+
+  <div class="note">
+    <span class="note-label">Lanes open as the level goes on</span>
+    <p>
+      A chamber does not start on all five lanes. Three are open, the fourth caves in at wave 4 and
+      the fifth at wave 5, centre-out &mdash; the same trick 1-1 plays by opening on a single lane.
+      Closed lanes are drawn as rubble and refuse placement, so the rule needs no text. This was the
+      fix for a wave 3 that testers called impossible: a scripted playthrough spent 66% of the level
+      under the price of a Chucker, and of the 74s where a lane stood undefended, 65s were spent
+      unable to afford the answer. The problem was never damage &mdash; it was being asked to cover
+      more ground than a cleared wave had paid for. <span class="tag built">built</span>
+    </p>
+  </div>
 
   <div class="note">
     <span class="note-label">Why failure is terminal, not a drain</span>
@@ -282,72 +300,90 @@
     </p>
   </div>
 
-  <h2><span class="n">04</span> Merging &mdash; the differentiator</h2>
+  <h2><span class="n">04</span> Fusion &mdash; the differentiator</h2>
   <p>
-    Two directions, opposite costs. Both cost raw power, which is what stops &ldquo;merge everything,
-    always&rdquo; from being correct. <span class="tag built">built</span>
+    The roster is three goblins. Everything else in the game is something you built by dropping one
+    onto another. A body holds up to three parts in any mix, and what comes out is a named creature
+    with its own job, not a stat line with a bigger number. <span class="tag built">built</span>
   </p>
 
+  <div class="note good">
+    <span class="note-label">Why it works this way</span>
+    <p>
+      An earlier version sold dedicated upgrade cards you carried in and planted on top of a goblin,
+      the way a Gatling Pea goes on a Repeater. That trade is <em>tile efficiency</em>, and it only
+      pays in a mode where tiles are scarce &mdash; PvZ has Survival for exactly that, and we do not.
+      It also spends a card slot on something that is not a creature. Both the PvZ&nbsp;1 Fusion mods
+      and PvZ3 do the opposite: you drag a plant onto a plant and get a genuinely new species with
+      combined abilities and its own sprite. The incentive there is <strong>capability</strong>, not
+      space, and it is the one thing anyone likes about PvZ3. We follow that.
+    </p>
+  </div>
+
+  <h3>What the parts do</h3>
   <div class="scroll">
     <table>
       <thead>
-        <tr><th>Merge</th><th>Requires</th><th>You gain</th><th>You give up</th></tr>
+        <tr><th>Parts</th><th>Result</th><th>What changes</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td class="name">Rank up</td>
-          <td>Same kind, same rank</td>
-          <td>Item slots (2 &rarr; 4 &rarr; 6), a freed cell, and height &mdash; Leapers cannot clear
-              a rank&nbsp;2+ goblin</td>
-          <td>Output grows &times;1.7 per rank, not &times;2. Two bodies become 85% of their sum.</td>
-        </tr>
-        <tr>
-          <td class="name">Hybridise</td>
-          <td>Different kinds, same rank</td>
-          <td>Both jobs in one cell, on independent cooldowns. Ten named pairings.</td>
-          <td>70% efficiency on each job, and 60% of both bodies' health.</td>
-        </tr>
+        <tr><td class="name">Chucker</td><td>Chucker</td><td>Lobs a rock at the first hero in the lane.</td></tr>
+        <tr><td class="name">Chucker &times;2</td><td class="name">Bowpair</td>
+            <td>They share one bow too big for either of them. Harder hit, pierces two.</td></tr>
+        <tr><td class="name">Chucker &times;3</td><td class="name">Ballista Crew</td>
+            <td>Three goblins crew a ballista. Skewers the whole lane.</td></tr>
+        <tr><td class="name">Digger &times;n</td><td class="name">Deep Shaft, Delve</td>
+            <td>Each extra Digger raises the take &times;1.85 and warms the shaft faster.</td></tr>
+        <tr><td class="name">Barricade + anything</td><td class="name">Bunker, Strongbox&hellip;</td>
+            <td>Armour bolted onto a working goblin, so the job survives the wave.</td></tr>
       </tbody>
     </table>
   </div>
 
   <p>
-    Rank caps at 4. Jobs cap at 2. A rank-3 goblin holding six pieces of junk and two jobs is the
-    ceiling, and getting one there should feel like the run's story.
+    Eighteen combinations are named, which is the whole point &mdash; a Toll Fort reads as a thing
+    that exists rather than as <em>barricade+chucker+digger</em>. Hybrids pay <strong>0.72&times;</strong>
+    on pooled health, so fusing is not free, and refunds follow what was actually spent, so a fused
+    goblin is worth what went into it.
   </p>
 
   <div class="note warn">
-    <span class="note-label">Known risk</span>
+    <span class="note-label">Still to prove</span>
     <p>
-      Making rank the Leaper's counter may quietly make ranking up <em>mandatory</em>, which would
-      flatten the choice between rank and hybrid. If playtests show that, the fix is to let hybrids
-      count as tall too, so both directions answer Leapers.
+      Three parts to a body is a guess. It is enough for the Chucker ladder to read as a story
+      (one throws, two share a bow, three crew a ballista) and it keeps the recipe count at
+      eighteen rather than in the hundreds. If players top out early and want more, the cap is the
+      first thing to move.
     </p>
   </div>
 
   <h2><span class="n">05</span> The cast</h2>
 
   <h3>Goblins <span class="tag built">built</span></h3>
+  <p>
+    Three, and that is the entire shop. Anything with a longer name was fused on the board.
+  </p>
   <div class="scroll">
     <table>
       <thead><tr><th>Goblin</th><th>Cost</th><th>Job</th><th>Role in the loop</th></tr></thead>
       <tbody>
-        <tr><td class="name">Chucker</td><td class="num">50</td><td>Throws rocks down the lane</td><td class="rule">Baseline damage. The thing you have most of.</td></tr>
-        <tr><td class="name">Hoarder</td><td class="num">50</td><td>25 coins every ~24s</td><td class="rule">Economy. ~48s payback, exactly Sunflower's maths.</td></tr>
-        <tr><td class="name">Barricade</td><td class="num">50</td><td>560 hp, does not fight</td><td class="rule">Buys time. Worthless alone, essential in front.</td></tr>
-        <tr><td class="name">Bomber</td><td class="num">125</td><td>Detonates when something nears</td><td class="rule">Panic button and crowd answer. One use.</td></tr>
-        <tr><td class="name">Ballista</td><td class="num">350</td><td>Pierces the whole lane</td><td class="rule">The only thing worth saving for. Reaches the back rank.</td></tr>
+        <tr><td class="name">Chucker</td><td class="num">100</td><td>Throws rocks down the lane</td><td class="rule">Baseline damage. The thing you have most of.</td></tr>
+        <tr><td class="name">Digger</td><td class="num">50</td><td>Mines what is under it</td><td class="rule">Economy, priced by how far forward you dare stand it.</td></tr>
+        <tr><td class="name">Barricade</td><td class="num">50</td><td>520 hp, does not fight</td><td class="rule">Buys time alone; armour for a working goblin when fused.</td></tr>
       </tbody>
     </table>
   </div>
 
-  <h3>Hybrids <span class="tag built">built</span></h3>
+  <h3>Fusions <span class="tag built">built</span></h3>
   <p>
-    Ten pairings, each named so it reads as its own creature: <strong>Bunker</strong> (wall that shoots),
-    <strong>Tollkeeper</strong> (shoots and earns), <strong>Strongbox</strong> (protected economy),
-    <strong>Powder Keg</strong> (wall that detonates), <strong>Bastion</strong>, <strong>Mortar</strong>,
-    <strong>Battery</strong>, <strong>Piggy Bank</strong>, <strong>Tithe Engine</strong>,
-    <strong>Siege Mortar</strong>.
+    Eighteen results across every mix of up to three parts, each named so it reads as its own
+    creature: <strong>Bowpair</strong> and <strong>Ballista Crew</strong> up the Chucker ladder;
+    <strong>Deep Shaft</strong> and <strong>Delve</strong> up the Digger one; <strong>Bunker</strong>,
+    <strong>Bulwark</strong>, <strong>Bastion</strong>, <strong>Redoubt</strong> and
+    <strong>Great&nbsp;Wall</strong> for armour; and the crossbreeds &mdash;
+    <strong>Tollkeeper</strong>, <strong>Strongbox</strong>, <strong>Mint</strong>,
+    <strong>Vault</strong>, <strong>Counting&nbsp;House</strong>, <strong>Toll&nbsp;Fort</strong>,
+    <strong>Prospector's&nbsp;Guard</strong>.
   </p>
 
   <h3>Junk <span class="tag built">built</span></h3>
@@ -463,6 +499,13 @@
     <li><strong>The hoard as a health bar.</strong> One number doing currency, income and lose-condition
       was elegant and did not survive contact with a player; it read as ordinary sun.</li>
     <li><strong>Permanent stat upgrades.</strong> See section 7.</li>
+    <li><strong>Dedicated upgrade cards.</strong> A card you carry in only to plant on top of another
+      goblin buys tile efficiency, and tiles are not scarce enough here to pay for it. Fusion uses the
+      goblins already on the board instead. See section 4.</li>
+    <li><strong>Anything mandatory placed by RNG.</strong> Twice now a design has put a required
+      resource somewhere random &mdash; the Tunneller's counter, then golden tiles &mdash; and both
+      times the run was decided before the player touched it. Randomness is allowed to add upside.
+      It is not allowed to own a counter, an economy, or a place to stand.</li>
     <li><strong>Worlds two onward, boss variants, dialogue, meta-currency.</strong> Not until world one
       is genuinely good.</li>
   </ul>
@@ -510,10 +553,17 @@
   <h2><span class="n">11</span> Open questions</h2>
   <p>These are unresolved and should be resolved by playtest, not by argument.</p>
   <ul>
-    <li><strong>Is merging still a choice?</strong> Rank as the Leaper counter may make ranking up
-      compulsory. Watch whether anyone ever chooses to hybridise instead.</li>
-    <li><strong>Are hybrids simply better?</strong> The Bunker solves two problems in one cell. If it
-      dominates, lower the 60% health share before touching the 70% output share.</li>
+    <li><strong>Does anyone fuse across types?</strong> The Chucker ladder is legible and rewarding,
+      so the risk is that everyone builds Ballista Crews and never makes a Toll Fort. If the
+      crossbreeds go unused, the fix is to give them a job the pure ladders cannot do, not to nerf
+      the ladder.</li>
+    <li><strong>Is three parts the right cap?</strong> It keeps the recipe list at eighteen and gives
+      the Chucker its one-two-three story. Whether it leaves enough room to keep building late is
+      unknown.</li>
+    <li><strong>Is the late game too rich?</strong> Scripted runs finish with several hundred coins
+      unspent. Some of that is the script running out of ideas rather than the economy overpaying,
+      but it wants watching on a real playthrough &mdash; a fusion you can always afford is not a
+      decision.</li>
     <li><strong>Is twenty minutes the right run?</strong> Untested. Ten chambers might want to be six.</li>
     <li><strong>Does the invisible tutorial land?</strong> If testers never work out the Leaper rule
       unprompted, the teaching is wrong — add a clearer visual, not a text box.</li>
