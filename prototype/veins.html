@@ -954,9 +954,12 @@
 
     for (let r = 0; r < ROWS; r++) {
       const yy = laneY(r) + CELL * 0.66;
-      // A caved-in lane has no last line of defence to show yet.
-      cx.globalAlpha = (S.traps[r] ? 1 : 0.13) * S.laneReveal[r];
-      if (cx.globalAlpha < 0.02) continue;
+      // A caved-in lane has no last line of defence to show yet. Skip before touching
+      // globalAlpha — bailing out with it still set leaks a transparent canvas onto
+      // everything drawn after this loop.
+      const a = (S.traps[r] ? 1 : 0.13) * S.laneReveal[r];
+      if (a < 0.02) continue;
+      cx.globalAlpha = a;
       cx.strokeStyle = "#8f8698"; cx.lineWidth = 2.2;
       cx.beginPath(); cx.arc(OX + 20, yy, 11, Math.PI, 0); cx.stroke();
       cx.beginPath();
