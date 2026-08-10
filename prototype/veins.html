@@ -148,16 +148,16 @@
     <button class="btn" id="restart" type="button">New chamber</button>
     <button class="btn" id="pause" type="button">Pause</button>
     <button class="btn on" id="mute" type="button">Sound on</button>
-    <span class="hint">Tap a card then a tile, or drag it onto one. Gold banks itself.</span>
+    <span class="hint">Drop a goblin onto a goblin to fuse them. Three to a body.</span>
   </div>
 
   <p class="foot">
-    Economy is <b>positional</b>, but nothing is randomly placed. The rock is seamed with gold that
-    thickens toward the far end, and a Digger takes whatever is under it &mdash; so how much it earns is
-    decided entirely by how far forward you dare put it. Nobody is told this: the ground is visibly
-    richer out there, the hovered cell shows its worth in coins rather than digits, and a fat pull
-    throws more rock. Every card recharges after use, so you cannot simply spam the cheap one.
-    <b>Nothing needs collecting</b> &mdash; gold flies home on its own.
+    Three goblins for sale and nothing else. Everything past that is <b>fused</b>: drop one onto
+    another and you get a new creature with both their jobs, up to three to a body. Two Chuckers share
+    a bow too big for either of them; three crew a ballista; a Barricade dropped on anything armours
+    it. Economy is <b>positional</b> &mdash; the rock is visibly richer toward the far end and a Digger
+    takes what is under it, so its worth is decided by how far forward you dare stand it, and its shaft
+    deepens the longer it survives. <b>Nothing needs collecting.</b>
   </p>
 </div>
 
@@ -269,57 +269,87 @@
   const K = CELL / 96;              // art was drawn for a 96px cell
 
   const START_COINS = 250;
-  const MAX_TIER = 3;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[(Math.random() * a.length) | 0];
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const ease = t => t * t * (3 - 2 * t);
-  const RANK_POWER = t => Math.pow(1.7, t - 1);
 
   // Recharge per card, as the original gives every seed packet its own. Without it
   // you simply spam the cheapest thing the moment you can afford it.
+  // Three goblins, and that is the whole roster. Everything else is made by putting
+  // one on top of another — the way PvZ Fusion drops a plant onto a plant and gets a
+  // new species, rather than a dedicated upgrade card you carry in.
   const UNITS = {
-    chucker:  { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", recharge: 7.5 },
-    digger:   { name: "Digger",    cost: 60,  hp: 95,  tint: "#c9d45f", recharge: 7.5 },
-    barricade:{ name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", recharge: 22 },
-    // upgrades: dropped onto a goblin that already exists
-    bow:      { name: "Bowpair",   cost: 150, hp: 150, tint: "#8fd07a", recharge: 14,
-                onto: "chucker", rank: 1 },
-    ballista: { name: "Ballista",  cost: 250, hp: 190, tint: "#b0d060", recharge: 26,
-                onto: "chucker", rank: 2 },
+    chucker:  { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", recharge: 6 },
+    digger:   { name: "Digger",    cost: 50,  hp: 95,  tint: "#c9d45f", recharge: 6 },
+    barricade:{ name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", recharge: 14 },
   };
-  const UPGRADES = ["bow", "ballista"];
+  const MAX_PARTS = 3;
+
+  const partsKey = g => [...g.parts].sort().join("+");
+  const countOf = (g, t) => g.parts.filter(x => x === t).length;
+
+  // Named results, so a fusion reads as its own creature and not as a stat change.
+  const FUSION = {
+    "chucker": "Chucker", "digger": "Digger", "barricade": "Barricade",
+    "chucker+chucker": "Bowpair",
+    "chucker+chucker+chucker": "Ballista Crew",
+    "barricade+chucker": "Bunker",
+    "chucker+digger": "Tollkeeper",
+    "barricade+digger": "Strongbox",
+    "digger+digger": "Deep Shaft",
+    "barricade+barricade": "Bulwark",
+    "barricade+chucker+chucker": "Bastion",
+    "barricade+barricade+chucker": "Redoubt",
+    "barricade+chucker+digger": "Toll Fort",
+    "chucker+chucker+digger": "Mint",
+    "chucker+digger+digger": "Prospector's Guard",
+    "barricade+digger+digger": "Vault",
+    "barricade+barricade+digger": "Counting House",
+    "digger+digger+digger": "Delve",
+    "barricade+barricade+barricade": "Great Wall",
+  };
+  const nameOf = g => FUSION[partsKey(g)] || g.parts.map(x => UNITS[x].name[0]).join("");
 
   // A Digger's take is a function of how far forward you put it. No tiles, no lottery:
   // the gradient is continuous and the choice is entirely yours.
   const DIG_EVERY = 5;
-  const yieldAt = col => Math.round(6 + col * 2.4);
+  const yieldAt = col => Math.round(5 + col * 1.9);
   const RICH_MAX = yieldAt(COLS - 1);
   // A Digger sinks its shaft deeper the longer it is left alone, so abandoning one
   // costs you the work. Placing a fresh miner elsewhere is no longer free.
-  const DIG_WARM = 34;                     // seconds to reach full output
-  const DIG_FLOOR = 0.35;                  // what a brand new miner pulls
+  const DIG_WARM = 18;                     // seconds to reach full output
+  const DIG_FLOOR = 0.5;                   // what a brand new miner pulls
 
-  // Upgrades are bought and placed onto an existing goblin, the way an upgrade plant
-  // is. Each rank is strictly better per tile and does a different job — a Gatling Pea
-  // is not a bigger Repeater, it is four peas instead of two.
-  const RANK_NAME = ["Chucker", "Bowpair", "Ballista Crew"];
+  // The original opens 1-1 on a single lane and adds lanes as the world goes on. We do
+  // the same inside one level, centre-out, so an early wave can never ask you to cover
+  // more ground than a cleared wave has paid for.
+  const LANE_ORDER = [2, 1, 3, 0, 4];
+  const lanesOpen = ix => ix < 3 ? 3 : ix < 4 ? 4 : 5;
+  const laneIsOpen = r => LANE_ORDER.indexOf(r) < lanesOpen(Math.max(S.waveIx, 0));
 
+  // Purses are the whole early economy — there is no sun falling from the sky here, so
+  // a cleared wave has to pay for the answer to the next one. Wave 1 nets ~60, which is
+  // a Digger and change; two cleared waves buy a Chucker.
   const FOES = {
-    squire:   { name: "Squire",   hp: 110, speed: 22, dps: 22, purse: 8,  pts: 1 },
-    scout:    { name: "Scout",    hp: 74,  speed: 42, dps: 16, purse: 7,  pts: 2 },
-    sergeant: { name: "Sergeant", hp: 290, speed: 18, dps: 30, purse: 15, pts: 2 },
+    squire:   { name: "Squire",   hp: 150, speed: 22, dps: 22, purse: 12, pts: 1 },
+    scout:    { name: "Scout",    hp: 150, speed: 42, dps: 16, purse: 11, pts: 2 },
+    sergeant: { name: "Sergeant", hp: 520, speed: 18, dps: 30, purse: 26, pts: 2 },
   };
 
   const S_ = "squire", C_ = "scout", G_ = "sergeant";
   const WAVES = [
+    // One new thing per wave, the way 1-2 adds a Conehead rather than a tougher Basic.
+    // Waves 1-3 are squires on three lanes: enough to learn the lane and bank a purse.
     { name: "First light",   list: [S_,S_,S_] },
     { name: "They regroup",  list: [S_,S_,S_,S_,S_] },
-    { name: "Outriders",     list: [S_,S_,C_,S_,S_,C_,S_] },
-    { name: "Armour up",     list: [S_,S_,C_,G_,S_,S_,C_,S_,G_] },
-    { name: "The long push", list: [S_,C_,S_,G_,S_,S_,C_,G_,S_,C_,S_,S_] },
-    { name: "Last of them",  list: [S_,S_,C_,G_,S_,S_,C_,S_,G_,S_,C_,S_,G_,S_,C_,S_] },
+    { name: "Outriders",     list: [S_,S_,S_,S_,S_,S_,S_] },
+    // Fourth lane caves in here, and the scouts arrive with it.
+    { name: "Fast ones",     list: [S_,S_,C_,S_,S_,C_,S_,C_,S_,S_] },
+    // Fifth lane, and the first armour.
+    { name: "Armour up",     list: [S_,C_,S_,G_,S_,S_,C_,G_,S_,C_,S_,S_,G_,C_] },
+    { name: "Last of them",  list: [G_,S_,C_,G_,S_,S_,C_,S_,G_,S_,C_,S_,G_,S_,C_,S_,G_,C_,G_,S_,C_,G_,S_,G_] },
   ];
 
   // ===================================================================== state
@@ -331,6 +361,8 @@
       traps: new Array(ROWS).fill(true),
       cool: { chucker: 0, digger: 0, barricade: 0, bow: 0, ballista: 0 },
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
+      // 0 = still caved in, 1 = open ground. Closed lanes are rubble you cannot build on.
+      laneReveal: new Array(ROWS).fill(0).map((_, r) => LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
       selUnit: null, selGob: null,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
       over: false, won: false, paused: false, t: 0, killed: 0, mined: 0, rate: 0,
@@ -342,7 +374,15 @@
   const cellOf = g => ({ x: OX + g.col * CELL, y: OY + g.row * CELL });
   const laneY = r => OY + r * CELL;
   const gobAt = (c, r) => S.goblins.find(g => g.col === c && g.row === r && g.hp > 0);
-  const maxHpOf = g => UNITS[g.type].hp * RANK_POWER(g.tier);
+  const maxHpOf = g => g.parts.reduce((a, t) => a + UNITS[t].hp, 0) * (g.parts.length > 1 ? 0.72 : 1);
+  const spentOn = g => g.parts.reduce((a, t) => a + UNITS[t].cost, 0);
+  function tintOf(g) {
+    if (g.parts.length === 1) return UNITS[g.parts[0]].tint;
+    const rgb = g.parts.map(t => UNITS[t].tint)
+      .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
+    const avg = [0, 1, 2].map(i => Math.round(rgb.reduce((s, c) => s + c[i], 0) / rgb.length));
+    return "#" + avg.map(v => v.toString(16).padStart(2, "0")).join("");
+  }
 
   const kick = a => { S.shake = Math.min(12, Math.max(S.shake, a)); };
   const stop = s => { S.freeze = Math.max(S.freeze, s); };
@@ -392,13 +432,13 @@
   }
 
   function chooseLane() {
-    if (S.spawnCount < 2) return (Math.random() * ROWS) | 0;
-    const w = [];
-    for (let r = 0; r < ROWS; r++) w.push(S.laneQuiet[r] > 0 ? 1e-6 : 1 / (1 + S.laneLoad[r]));
+    const open = LANE_ORDER.slice(0, lanesOpen(S.waveIx));
+    if (S.spawnCount < 2) return pick(open);
+    const w = open.map(r => S.laneQuiet[r] > 0 ? 1e-6 : 1 / (1 + S.laneLoad[r]));
     const tot = w.reduce((a, b) => a + b, 0);
     let x = Math.random() * tot;
-    for (let r = 0; r < ROWS; r++) { x -= w[r]; if (x <= 0) return r; }
-    return ROWS - 1;
+    for (let i = 0; i < open.length; i++) { x -= w[i]; if (x <= 0) return open[i]; }
+    return open[open.length - 1];
   }
 
   function spawnFoe(type, lane) {
@@ -429,6 +469,22 @@
     if (S.flash > 0) S.flash = Math.max(0, S.flash - dt * 3.4);
     if (S.banner > 0) S.banner -= dt;
 
+    // Ground opens up as the level goes on. The rubble breaking is the only notice you
+    // get that a new lane is live — no text, you just watch it cave in.
+    for (let r = 0; r < ROWS; r++) {
+      const want = laneIsOpen(r) ? 1 : 0;
+      if (S.laneReveal[r] === 0 && want === 1) {
+        const y = OY + r * CELL + CELL / 2;
+        for (let i = 0; i < 5; i++)
+          burst(OX + rnd(0, COLS * CELL), y + rnd(-16, 16), 7,
+                { colors: ["#4a4150", "#3b3340", "#6b5f4a"], spread: 200,
+                  size: [1.6, 4.2], gravity: 460, life: [0.3, 0.7] });
+        kick(6); Sound.play("dig");
+      }
+      if (S.laneReveal[r] !== want)
+        S.laneReveal[r] = clamp(S.laneReveal[r] + (want ? dt : -dt) * 0.9, 0, 1);
+    }
+
     if (S.phase === "intro") { S.phaseT -= dt; if (S.phaseT <= 0) startWave(); }
     else if (S.phase === "fight") {
       S.phaseT += dt;
@@ -438,7 +494,10 @@
       }
       if (!S.queue.length && !S.foes.length) {
         S.phase = "breath";
-        S.phaseT = S.waveIx >= WAVES.length - 1 ? 0.6 : 3.4;
+        // PvZ leaves 25-31s between waves. Ours end on a clear board rather than on a
+        // health trigger, so the gap is shorter, but it still has to be long enough to
+        // spend a purse in — 3s was not.
+        S.phaseT = S.waveIx >= WAVES.length - 1 ? 0.6 : S.waveIx < 3 ? 9 : 6;
       }
     } else if (S.phase === "breath") { S.phaseT -= dt; if (S.phaseT <= 0) startWave(); }
 
@@ -453,30 +512,22 @@
       if (g.land > 0) g.land -= dt * 2.6;
       if (g.recoil > 0) g.recoil -= dt * 6;
 
-      if (g.type === "chucker") {
+      // How many Chuckers went into it decides the weapon: one arm throws a rock, two
+      // share a bow too big for either, three crew a ballista.
+      const cn = countOf(g, "chucker");
+      if (cn > 0) {
         const target = S.foes.find(f => f.lane === g.row && f.hp > 0 && f.x > p.x - 10);
         g.wind = target && g.cd < 0.32 ? clamp(1 - g.cd / 0.32, 0, 1) : 0;
         if (target && g.cd <= 0) {
           g.recoil = 1; g.wind = 0;
-          // rank 1 lobs a rock, rank 2 is two goblins and a bow too big for either of
-          // them, rank 3 is a three-crew ballista. Different weapons, not bigger numbers.
-          if (g.tier === 1) {
-            g.cd = 1.35;
-            S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
-                           dmg: 22, pierce: 0, kind: "rock", trail: [], spin: 0 });
-            Sound.play("throw");
-          } else if (g.tier === 2) {
-            g.cd = 1.5;
-            S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.44, lane: g.row,
-                           dmg: 34, pierce: 2, kind: "arrow", trail: [], spin: 0 });
-            Sound.play("bow");
-          } else {
-            g.cd = 2.4;
-            S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.44, lane: g.row,
-                           dmg: 62, pierce: 99, kind: "bolt", trail: [], spin: 0 });
-            kick(3);
-            Sound.play("bolt");
-          }
+          const spec = cn === 1 ? { cd: 1.3, dmg: 22, pierce: 0, kind: "rock",  snd: "throw" }
+                     : cn === 2 ? { cd: 1.4, dmg: 36, pierce: 2, kind: "arrow", snd: "bow" }
+                                : { cd: 2.2, dmg: 66, pierce: 99, kind: "bolt", snd: "bolt" };
+          g.cd = spec.cd;
+          S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
+                         dmg: spec.dmg, pierce: spec.pierce, kind: spec.kind, trail: [], spin: 0 });
+          if (cn === 3) kick(3);
+          Sound.play(spec.snd);
           burst(p.x + CELL * 0.64, p.y + CELL * 0.46, 3,
                 { colors: ["#cbbfa8"], spread: 70, size: [1.2, 2.2], dir: 0, cone: 1.1,
                   gravity: 260, life: [0.12, 0.25] });
@@ -485,13 +536,17 @@
 
       // The further forward it stands, the more it pulls out — and the more exposed
       // it is. That trade is the entire economic decision.
-      if (g.type === "digger") {
+      const dn = countOf(g, "digger");
+      if (dn > 0) {
         g.age = (g.age || 0) + dt;
-        const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, g.age / DIG_WARM);
-        const take = Math.max(1, Math.round(yieldAt(g.col) * warm));
+        // more picks means a faster shaft as well as a bigger pull
+        const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, g.age * dn / DIG_WARM);
+        const take = Math.max(1, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85)));
         rate += take / DIG_EVERY;
-        if (g.cd <= 0) {
-          g.cd = DIG_EVERY;
+        if (g.dcd === undefined) g.dcd = 1.2;
+        g.dcd -= dt;
+        if (g.dcd <= 0) {
+          g.dcd = DIG_EVERY;
           S.mined += take;
           g.squash = 1;
           spill(p.x + CELL / 2, p.y + CELL * 0.55, take);
@@ -627,9 +682,9 @@
   function drawGoblin(g) {
     const p = cellOf(g);
     const cxp = p.x + CELL / 2, cyp = p.y + CELL * 0.58;
-    const u = UNITS[g.type];
-    const grow = (1 + (g.tier - 1) * 0.2) * K;
-    const big = g.type === "barricade";
+    const grow = (1 + (g.parts.length - 1) * 0.14) * K;
+    const big = countOf(g, "barricade") > 0;
+    const tint = tintOf(g);
     const sq = g.squash > 0 ? ease(clamp(g.squash, 0, 1)) : 0;
     const landing = g.land > 0 ? ease(clamp(g.land, 0, 1)) : 0;
     const sx = (1 + sq * 0.24 + landing * 0.3) * grow;
@@ -647,7 +702,7 @@
     cx.beginPath(); cx.ellipse(cxp, cyp + (big ? 34 : 28) * grow, 24 * sx, 6 * grow, 0, 0, 6.284); cx.fill();
 
     // extra crew stand behind, so a rank reads as more goblins rather than a bigger one
-    const crew = g.type === "chucker" ? g.tier - 1 : 0;
+    const crew = g.parts.length - 1;
     for (let i = crew; i >= 1; i--) {
       cx.save();
       cx.translate(cxp - 13 * i * K, cyp - 5 * i * K);
@@ -672,7 +727,7 @@
     if (g.hurtT > 0 && Math.sin(S.t * 60) > 0) cx.globalAlpha = 0.55;
 
     const rw = big ? 34 : 26, rh = big ? 36 : 28;
-    cx.fillStyle = u.tint;
+    cx.fillStyle = tint;
     cx.beginPath(); cx.moveTo(-rw + 3, -6); cx.lineTo(-rw - 15, -20); cx.lineTo(-rw - 2, 4); cx.closePath(); cx.fill();
     cx.beginPath(); cx.moveTo(rw - 3, -6); cx.lineTo(rw + 15, -20); cx.lineTo(rw + 2, 4); cx.closePath(); cx.fill();
     cx.beginPath(); cx.ellipse(0, 0, rw, rh, 0, 0, 6.284); cx.fill();
@@ -683,7 +738,7 @@
     cx.beginPath(); cx.ellipse(-9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
     cx.beginPath(); cx.ellipse(9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
     cx.fillStyle = "#14110f";
-    const look = g.type === "digger" ? -2 : 2;
+    const look = countOf(g, "digger") > 0 ? -2 : 2;
     cx.beginPath(); cx.arc(-9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
     cx.beginPath(); cx.arc(9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
     cx.strokeStyle = "#14110f"; cx.lineWidth = 2; cx.lineCap = "round";
@@ -693,12 +748,13 @@
     cx.fillRect(2, rh * 0.12 + 5, 3.5, 4);
 
     // the weapon, which is the whole point of a rank
-    if (g.type === "chucker" && g.tier === 2) {
+    const cnn = countOf(g, "chucker");
+    if (cnn === 2) {
       cx.strokeStyle = "#8a6234"; cx.lineWidth = 4; cx.lineCap = "round";
       cx.beginPath(); cx.arc(20, 0, 24, -1.15, 1.15); cx.stroke();
       cx.strokeStyle = "#d9cdb4"; cx.lineWidth = 1.4;
       cx.beginPath(); cx.moveTo(30, -22); cx.lineTo(30, 22); cx.stroke();
-    } else if (g.type === "chucker" && g.tier === 3) {
+    } else if (cnn === 3) {
       cx.fillStyle = "#6b4e2c";
       cx.fillRect(6, -8, 40, 9);
       cx.fillStyle = "#9c7643";
@@ -717,9 +773,9 @@
       cx.fillStyle = "rgba(0,0,0,.55)"; cx.fillRect(cxp - w / 2, p.y + CELL - 12, w, 4);
       cx.fillStyle = fr > 0.4 ? "#6fbf5b" : "#d1553f"; cx.fillRect(cxp - w / 2, p.y + CELL - 12, w * fr, 4);
     }
-    if (g.tier > 1) {
+    if (g.parts.length > 1) {
       cx.font = "bold 10px " + FONT; cx.fillStyle = "#f5dc9c"; cx.textAlign = "center";
-      cx.fillText(RANK_NAME[g.tier - 1], cxp, p.y + CELL - 1);
+      cx.fillText(nameOf(g), cxp, p.y + CELL - 1);
     }
   }
 
@@ -808,6 +864,29 @@
         }
       }
     }
+    // Lanes that have not opened yet are packed rubble. They are drawn over the seams,
+    // so a closed lane reads as "no gold here, nothing walks here" at a glance.
+    for (let r = 0; r < ROWS; r++) {
+      const shut = 1 - S.laneReveal[r];
+      if (shut <= 0.001) continue;
+      const y = OY + r * CELL;
+      cx.save();
+      cx.beginPath(); cx.rect(OX, y, COLS * CELL, CELL); cx.clip();
+      cx.fillStyle = "rgba(16,13,20," + (0.9 * shut) + ")";
+      cx.fillRect(OX, y, COLS * CELL, CELL);
+      cx.globalAlpha = shut;
+      for (let i = 0; i < 46; i++) {
+        const a = (i * 2.399 + r * 1.13) % 1, b2 = (i * 4.771 + r * 0.61) % 1;
+        const px = OX + a * COLS * CELL, py = y + 6 + b2 * (CELL - 12);
+        const sz = 3 + ((i * 7) % 5);
+        cx.fillStyle = i % 3 ? "#39323f" : "#453d4c";
+        cx.beginPath();
+        cx.moveTo(px, py - sz); cx.lineTo(px + sz, py); cx.lineTo(px, py + sz * 0.8);
+        cx.lineTo(px - sz * 0.9, py + sz * 0.2); cx.closePath(); cx.fill();
+      }
+      cx.restore();
+    }
+
     cx.strokeStyle = "rgba(0,0,0,.35)"; cx.lineWidth = 1;
     for (let c = 0; c <= COLS; c++) {
       cx.beginPath(); cx.moveTo(OX + c * CELL, OY); cx.lineTo(OX + c * CELL, OY + ROWS * CELL); cx.stroke();
@@ -818,7 +897,11 @@
 
     if (S.selUnit && hover.col >= 0 && !S.over) {
       const u = UNITS[S.selUnit];
-      const ok = !gobAt(hover.col, hover.row) && S.coins >= u.cost && S.cool[S.selUnit] <= 0;
+      // An occupied cell is a legal target now — that is where fusions come from — so it
+      // only reads red when the goblin standing there is already full.
+      const on = gobAt(hover.col, hover.row);
+      const ok = laneIsOpen(hover.row) && (!on || on.parts.length < MAX_PARTS)
+                 && S.coins >= u.cost && S.cool[S.selUnit] <= 0;
       cx.fillStyle = ok ? "rgba(111,191,91,.2)" : "rgba(209,85,63,.2)";
       cx.fillRect(OX + hover.col * CELL, OY + hover.row * CELL, CELL, CELL);
       cx.strokeStyle = ok ? "rgba(111,191,91,.75)" : "rgba(209,85,63,.75)";
@@ -859,7 +942,9 @@
 
     for (let r = 0; r < ROWS; r++) {
       const yy = laneY(r) + CELL * 0.66;
-      cx.globalAlpha = S.traps[r] ? 1 : 0.13;
+      // A caved-in lane has no last line of defence to show yet.
+      cx.globalAlpha = (S.traps[r] ? 1 : 0.13) * S.laneReveal[r];
+      if (cx.globalAlpha < 0.02) continue;
       cx.strokeStyle = "#8f8698"; cx.lineWidth = 2.2;
       cx.beginPath(); cx.arc(OX + 20, yy, 11, Math.PI, 0); cx.stroke();
       cx.beginPath();
@@ -987,35 +1072,42 @@
     const u = UNITS[key];
     if (!u) return false;
     const occ = gobAt(col, row);
+    if (!laneIsOpen(row)) {
+      Sound.play("deny");
+      popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12, "STILL CAVED IN", "#8a8095");
+      burst(OX + col * CELL + CELL / 2, OY + row * CELL + CELL / 2, 8,
+            { colors: ["#4a4150", "#3b3340"], spread: 150, size: [1.4, 3], life: [0.2, 0.4] });
+      return false;
+    }
     if (S.cool[key] > 0) { Sound.play("deny"); denyCard(key); return false; }
     if (S.coins < u.cost) { Sound.play("deny"); denyCard(key); return false; }
 
-    if (u.onto) {
-      // an upgrade goes onto an existing goblin of the right kind and rank, the way
-      // a Gatling Pea is planted onto a Repeater
-      if (!occ || occ.type !== u.onto || occ.tier !== u.rank) {
+    // Dropping a goblin onto a goblin fuses them, which is the only way to reach
+    // anything past the three you can buy.
+    if (occ) {
+      if (occ.parts.length >= MAX_PARTS) {
         Sound.play("deny");
-        popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12,
-                "NEEDS A " + RANK_NAME[u.rank - 1].toUpperCase(), "#d1553f");
+        popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12, "NO ROOM IN THERE", "#d1553f");
         return false;
       }
       S.coins -= u.cost;
-      occ.tier++; occ.hp = maxHpOf(occ); occ.squash = 1.4; occ.born = S.t;
+      occ.parts.push(key);
+      occ.hp = maxHpOf(occ); occ.squash = 1.4; occ.born = S.t;
       const gp = cellOf(occ);
       burst(gp.x + CELL / 2, gp.y + CELL / 2, 24,
-            { colors: ["#fff3cf", "#e8c05a", UNITS[occ.type].tint], spread: 320, size: [1.8, 4.6] });
+            { colors: ["#fff3cf", "#e8c05a", tintOf(occ)], spread: 320, size: [1.8, 4.6] });
       ring(gp.x + CELL / 2, gp.y + CELL / 2, 96, "rgba(255,243,207,.85)", 4, 0.4);
-      popText(gp.x + CELL / 2, gp.y + 4, RANK_NAME[occ.tier - 1].toUpperCase(), "#fff3cf");
+      popText(gp.x + CELL / 2, gp.y + 4, nameOf(occ).toUpperCase(), "#fff3cf");
       kick(9); stop(0.08); flash(0.24); Sound.play("merge");
       S.cool[key] = u.recharge;
       S.selUnit = null; renderRack();
+      renderInspector();
       return true;
     }
 
-    if (occ) { Sound.play("deny"); return false; }
     S.coins -= u.cost;
-    S.goblins.push({ type: key, col, row, hp: u.hp, tier: 1, born: S.t, age: 0,
-                     cd: key === "digger" ? 1.2 : 0.5,
+    S.goblins.push({ parts: [key], col, row, hp: u.hp, born: S.t, age: 0,
+                     cd: 0.5, dcd: 1.2,
                      squash: 0, land: 1, recoil: 0, hurtT: 0, wind: 0 });
     const gx = OX + col * CELL + CELL / 2, gy = OY + row * CELL + CELL * 0.6;
     burst(gx, gy + 18, 10, { colors: ["#4a4150", "#3b3340", "#5a5060"], spread: 180,
@@ -1030,8 +1122,7 @@
   // Dig one up. Free for a moment in case of a misclick, then half back.
   const GRACE = 3;
   function refundOf(g) {
-    let spent = UNITS[g.type].cost;
-    for (let t = 1; t < g.tier; t++) spent += UNITS[UPGRADES[t - 1]].cost;
+    const spent = spentOn(g);
     return (S.t - g.born <= GRACE) ? spent : Math.round(spent * 0.5);
   }
   function removeGoblin(g) {
@@ -1066,11 +1157,9 @@
 
   // ==================================================================== chrome
   const DESC = {
-    chucker:  "Lobs a rock. One goblin, one arm.",
-    digger:   "Digs where you put it. Deeper is richer, and its shaft deepens as it works.",
-    barricade:"Doesn't fight. Won't move.",
-    bow:      "Onto a Chucker. Two goblins, one oversized bow — the arrow goes through two.",
-    ballista: "Onto a Bowpair. Three goblins and a siege engine. Skewers the whole lane.",
+    chucker:  "Lobs a rock. Drop a second on top and they share a bow; a third crews a ballista.",
+    digger:   "Digs where you stand it. Deeper is richer, and the shaft deepens as it works.",
+    barricade:"Doesn't fight. Won't move. Put one on anything to armour it.",
   };
   let drag = null;
   function cellUnder(clientX, clientY) {
@@ -1149,13 +1238,16 @@
     const g = S.selGob;
     if (!g || g.hp <= 0) { inspEmpty.hidden = false; inspBody.hidden = true; return; }
     inspEmpty.hidden = true; inspBody.hidden = false;
-    inspName.textContent = g.type === "chucker" ? RANK_NAME[g.tier - 1] : UNITS[g.type].name;
-    const bits = [Math.round(g.hp) + "/" + Math.round(maxHpOf(g)) + " hp"];
-    if (g.type === "digger") {
-      const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, (g.age || 0) / DIG_WARM);
+    inspName.textContent = nameOf(g);
+    const bits = [g.parts.map(t => UNITS[t].name).join(" + "),
+                  Math.round(g.hp) + "/" + Math.round(maxHpOf(g)) + " hp"];
+    const dn = countOf(g, "digger");
+    if (dn > 0) {
+      const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, (g.age || 0) * dn / DIG_WARM);
       bits.push("shaft " + Math.round(warm * 100) + "%");
-      bits.push("+" + Math.max(1, Math.round(yieldAt(g.col) * warm)) + " per pull");
+      bits.push("+" + Math.max(1, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85))) + " per pull");
     }
+    if (g.parts.length < MAX_PARTS) bits.push("room for " + (MAX_PARTS - g.parts.length) + " more");
     const free = S.t - g.born <= GRACE;
     bits.push(free ? "dig up: full refund" : "dig up: half back");
     inspMeta.textContent = bits.join("  ·  ");
@@ -1215,7 +1307,7 @@
     rateEl.textContent = "+" + S.rate.toFixed(1) + " / sec";
     waveEl.textContent = S.over ? (S.won ? "clear" : "lost")
       : S.waveIx < 0 ? "—" : (S.waveIx + 1) + "/" + WAVES.length;
-    veinsEl.textContent = S.goblins.filter(g => g.type === "digger").length + " digging";
+    veinsEl.textContent = S.goblins.filter(g => countOf(g, "digger") > 0).length + " digging";
 
     if (S.selGob) renderInspector();
     for (const k in S.cool) {
@@ -1230,6 +1322,10 @@
   window.__veins = {
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
+    nameOf, maxHpOf, yieldAt, WAVES, UNITS, place: tryPlace,
+    // Balance harness: advance the simulation without waiting on real frames.
+    step: dt => { if (!S.over) update(dt); },
+    reset: () => { newRun(); renderAll(); },
   };
   renderAll();
   requestAnimationFrame(frame);
