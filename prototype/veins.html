@@ -40,9 +40,23 @@
   .pip.done { background: var(--gold); }
   .pip.now { background: var(--alarm); transform: scaleY(1.7); }
 
-  canvas { display: block; width: 100%; max-width: 1120px; height: auto; aspect-ratio: 1120 / 520;
+  canvas { display: block; width: 100%; max-width: 900px; height: auto; aspect-ratio: 888 / 492;
            border: 1px solid #3b3340; border-radius: 4px; background: var(--cave);
-           cursor: pointer; touch-action: manipulation; }
+           cursor: pointer; touch-action: none; margin: 0 auto; }
+  /* on a short screen the board has to give way, or it pushes the cards off entirely
+     and there is nothing to drag from */
+  @media (orientation: landscape) and (max-height: 620px) {
+    .shell { padding: 6px 8px 12px; gap: 6px; }
+    canvas { max-height: 58vh; width: auto; max-width: 100%; }
+    .masthead, .foot, .insp { display: none; }
+    .hud { padding: 3px 9px; gap: 12px; }
+    .readout-value { font-size: 17px; }
+    .readout-label, .readout-sub { font-size: 9px; }
+    .card { flex: 1 1 90px; min-width: 84px; padding: 4px 7px; }
+    .card-name { font-size: 11.5px; }
+    .card-desc { display: none; }
+    .controls .hint { display: none; }
+  }
 
   .rack { display: flex; gap: 9px; flex-wrap: wrap; }
   .card { flex: 1 1 150px; min-width: 132px;
@@ -77,6 +91,18 @@
   .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .btn.on { color: var(--gold); border-color: var(--gold-dim); }
   .hint { font-size: 11.5px; color: var(--ink-dim); font-style: italic; }
+  .insp { border: 1px solid #3b3340; border-radius: 3px; padding: 7px 12px;
+          background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+          display: flex; align-items: center; gap: 12px; min-height: 22px; }
+  .insp-empty { font-size: 12px; color: var(--ink-dim); font-style: italic; }
+  .insp-empty[hidden], .insp-body[hidden] { display: none; }
+  .insp-body { display: flex; align-items: center; gap: 12px; width: 100%; }
+  .insp-body b { font-family: var(--display); font-size: 17px; letter-spacing: .03em;
+                 text-transform: uppercase; color: var(--gold); font-weight: normal; }
+  .insp-meta { font-family: var(--data); font-size: 11.5px; color: var(--ink-dim); }
+  .btn.danger { margin-left: auto; border-color: #6b3a35; color: #e0897a; }
+  .btn.danger:hover { border-color: var(--alarm); color: #ffb3a3; }
+  .card.drag { opacity: .5; }
 
   .foot { font-size: 12.5px; color: var(--ink-dim); max-width: 76ch;
           border-top: 1px solid #2b2530; padding-top: 14px; }
@@ -87,7 +113,7 @@
 <div class="shell">
   <header class="masthead">
     <h1>Veins</h1>
-    <span class="kicker">six lanes &middot; fourteen deep &middot; the gold is in the ground</span>
+    <span class="kicker">nine by five &middot; the gold is in the ground</span>
   </header>
 
   <div class="hud">
@@ -104,16 +130,25 @@
     <div class="pips" id="pips"></div>
   </div>
 
-  <canvas id="board" width="1120" height="520"
+  <canvas id="board" width="888" height="492"
     aria-label="Six lanes, fourteen columns. Gold veins in the ground. Diggers only produce when placed on one."></canvas>
 
   <div class="rack" id="rack"></div>
+
+  <div class="insp" id="insp">
+    <span class="insp-empty" id="insp-empty">Tap a goblin to inspect it, or dig it up.</span>
+    <span class="insp-body" id="insp-body" hidden>
+      <b id="insp-name">&mdash;</b>
+      <span class="insp-meta" id="insp-meta"></span>
+      <button class="btn danger" id="insp-dig" type="button">Dig up</button>
+    </span>
+  </div>
 
   <div class="controls">
     <button class="btn" id="restart" type="button">New chamber</button>
     <button class="btn" id="pause" type="button">Pause</button>
     <button class="btn on" id="mute" type="button">Sound on</button>
-    <span class="hint">Click a goblin, then another of the same kind, to merge. Gold banks itself.</span>
+    <span class="hint">Tap a card then a tile, or drag it onto one. Gold banks itself.</span>
   </div>
 
   <p class="foot">
@@ -143,7 +178,15 @@
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       ctx = new AC();
-      master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+      master = ctx.createGain(); master.gain.value = 0.62;
+      const warm = ctx.createBiquadFilter();
+      warm.type = "lowpass"; warm.frequency.value = 2600; warm.Q.value = 0.5;
+      const tame = ctx.createBiquadFilter();
+      tame.type = "peaking"; tame.frequency.value = 1800; tame.Q.value = 1.1; tame.gain.value = -6;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -20; comp.knee.value = 26; comp.ratio.value = 6;
+      comp.attack.value = 0.004; comp.release.value = 0.2;
+      master.connect(tame); tame.connect(warm); warm.connect(comp); comp.connect(ctx.destination);
       const n = ctx.sampleRate * 1.1;
       noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
@@ -157,7 +200,7 @@
       o.type = type; o.frequency.setValueAtTime(f0, t);
       if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(gain, t + Math.min(0.012, dur * 0.3));
+      g.gain.linearRampToValueAtTime(gain, t + Math.min(0.03, dur * 0.35));   // softer attack
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
     }
@@ -174,17 +217,17 @@
       s.connect(bp); bp.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.02);
     }
     const lib = {
-      select: () => tone({ type: "square", f0: rr(680, 740), f1: rr(940, 1010), dur: 0.05, gain: 0.09 }),
-      deny:   () => tone({ type: "sawtooth", f0: 150, f1: 90, dur: 0.14, gain: 0.11 }),
+      select: () => tone({ type: "triangle", f0: rr(620, 680), f1: rr(880, 940), dur: 0.07, gain: 0.1 }),
+      deny:   () => tone({ type: "triangle", f0: 170, f1: 96, dur: 0.17, gain: 0.14 }),
       hover:  () => tone({ type: "sine", f0: rr(1100, 1250), dur: 0.03, gain: 0.03 }),
       place:  () => { tone({ type: "sine", f0: rr(150, 175), f1: 55, dur: 0.19, gain: 0.4 });
                       hiss({ dur: 0.17, gain: 0.2, f0: 900, f1: 180 }); },
       throw:  () => { hiss({ dur: 0.07, gain: 0.1, type: "bandpass", f0: rr(1500, 2100), q: 1.4 });
                       tone({ type: "triangle", f0: rr(400, 470), f1: 190, dur: 0.08, gain: 0.08 }); },
-      hit:    () => { hiss({ dur: 0.05, gain: 0.26, type: "highpass", f0: rr(1700, 2400) });
-                      tone({ type: "square", f0: rr(200, 250), f1: 80, dur: 0.05, gain: 0.11 }); },
-      kill:   () => { hiss({ dur: 0.22, gain: 0.3, f0: 1500, f1: 120 });
-                      tone({ type: "sawtooth", f0: rr(300, 350), f1: 70, dur: 0.2, gain: 0.14 }); },
+      hit:    () => { hiss({ dur: 0.06, gain: 0.16, type: "bandpass", f0: rr(900, 1400), q: 1.2 });
+                      tone({ type: "triangle", f0: rr(190, 240), f1: 78, dur: 0.07, gain: 0.13 }); },
+      kill:   () => { hiss({ dur: 0.26, gain: 0.2, f0: 1100, f1: 110 });
+                      tone({ type: "triangle", f0: rr(280, 330), f1: 66, dur: 0.24, gain: 0.16 }); },
       // a pick going into rock, then the coin
       dig:    () => { hiss({ dur: 0.09, gain: 0.22, type: "bandpass", f0: rr(900, 1300), q: 2.2 });
                       tone({ type: "triangle", f0: rr(180, 220), f1: 90, dur: 0.1, gain: 0.16 }); },
@@ -195,30 +238,34 @@
                       const b = rr(1500, 1800);
                       tone({ type: "triangle", f0: b, dur: 0.06, gain: 0.09 });
                       tone({ type: "triangle", f0: b * 1.5, dur: 0.1, gain: 0.07, delay: 0.04 }); },
-      dry:    () => { tone({ type: "sawtooth", f0: 260, f1: 90, dur: 0.4, gain: 0.16 });
-                      hiss({ dur: 0.4, gain: 0.12, f0: 700, f1: 120 }); },
+      // a bow creaking then loosing, and a ballista that sounds like furniture
+      bow:    () => { hiss({ dur: 0.1, gain: 0.09, type: "bandpass", f0: rr(500, 700), q: 2 });
+                      tone({ type: "triangle", f0: rr(320, 380), f1: 150, dur: 0.16, gain: 0.13 }); },
+      bolt:   () => { tone({ type: "triangle", f0: 150, f1: 62, dur: 0.3, gain: 0.26 });
+                      hiss({ dur: 0.16, gain: 0.16, type: "bandpass", f0: 800, f1: 240, q: 1.4 });
+                      tone({ type: "sine", f0: 900, f1: 380, dur: 0.2, gain: 0.08, delay: 0.02 }); },
       merge:  () => { [0, 0.055, 0.11].forEach((d, i) =>
                         tone({ type: "triangle", f0: [523, 659, 880][i], dur: 0.3, gain: 0.16, delay: d }));
                       tone({ type: "sine", f0: 120, f1: 48, dur: 0.34, gain: 0.42 });
                       hiss({ dur: 0.4, gain: 0.14, type: "bandpass", f0: 900, f1: 4200, q: 0.7, delay: 0.02 }); },
-      trap:   () => { hiss({ dur: 0.09, gain: 0.44, type: "bandpass", f0: 2600, q: 6 });
-                      tone({ type: "square", f0: 160, f1: 45, dur: 0.26, gain: 0.32 }); },
-      wave:   () => { tone({ type: "sawtooth", f0: 88, f1: 132, dur: 0.75, gain: 0.16 });
-                      tone({ type: "sawtooth", f0: 132, f1: 176, dur: 0.7, gain: 0.1, delay: 0.1 }); },
+      trap:   () => { hiss({ dur: 0.1, gain: 0.3, type: "bandpass", f0: 1500, q: 4 });
+                      tone({ type: "triangle", f0: 155, f1: 44, dur: 0.3, gain: 0.34 }); },
+      wave:   () => { tone({ type: "triangle", f0: 88, f1: 131, dur: 0.9, gain: 0.2 });
+                      tone({ type: "sine", f0: 176, f1: 262, dur: 0.8, gain: 0.09, delay: 0.12 }); },
       win:    () => [523, 659, 784, 1046].forEach((f, i) =>
                       tone({ type: "triangle", f0: f, dur: 0.5, gain: 0.17, delay: i * 0.11 })),
       lose:   () => { [392, 330, 262, 196].forEach((f, i) =>
-                        tone({ type: "sawtooth", f0: f, dur: 0.5, gain: 0.15, delay: i * 0.15 }));
-                      hiss({ dur: 1.1, gain: 0.2, f0: 700, f1: 80 }); },
+                        tone({ type: "triangle", f0: f, dur: 0.6, gain: 0.16, delay: i * 0.15 }));
+                      hiss({ dur: 1.1, gain: 0.14, f0: 500, f1: 70 }); },
     };
     return { wake, play(k) { if (!ctx) return; (lib[k] || (() => {}))(); },
              toggle() { muted = !muted; return !muted; } };
   })();
 
   // ================================================================= constants
-  const W = 1120, H = 520;
-  const COLS = 14, ROWS = 6, CELL = 70;
-  const OX = 96, OY = 46;
+  const W = 888, H = 492;
+  const COLS = 9, ROWS = 5, CELL = 88;
+  const OX = 96, OY = 52;
   const K = CELL / 96;              // art was drawn for a 96px cell
 
   const START_COINS = 250;
@@ -234,15 +281,30 @@
   // you simply spam the cheapest thing the moment you can afford it.
   const UNITS = {
     chucker:  { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", recharge: 7.5 },
-    digger:   { name: "Digger",    cost: 50,  hp: 95,  tint: "#c9d45f", recharge: 7.5 },
+    digger:   { name: "Digger",    cost: 60,  hp: 95,  tint: "#c9d45f", recharge: 7.5 },
     barricade:{ name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", recharge: 22 },
+    // upgrades: dropped onto a goblin that already exists
+    bow:      { name: "Bowpair",   cost: 150, hp: 150, tint: "#8fd07a", recharge: 14,
+                onto: "chucker", rank: 1 },
+    ballista: { name: "Ballista",  cost: 250, hp: 190, tint: "#b0d060", recharge: 26,
+                onto: "chucker", rank: 2 },
   };
+  const UPGRADES = ["bow", "ballista"];
 
   // A Digger's take is a function of how far forward you put it. No tiles, no lottery:
   // the gradient is continuous and the choice is entirely yours.
   const DIG_EVERY = 5;
-  const yieldAt = col => Math.round(6 + col * 1.55);
+  const yieldAt = col => Math.round(6 + col * 2.4);
   const RICH_MAX = yieldAt(COLS - 1);
+  // A Digger sinks its shaft deeper the longer it is left alone, so abandoning one
+  // costs you the work. Placing a fresh miner elsewhere is no longer free.
+  const DIG_WARM = 34;                     // seconds to reach full output
+  const DIG_FLOOR = 0.35;                  // what a brand new miner pulls
+
+  // Upgrades are bought and placed onto an existing goblin, the way an upgrade plant
+  // is. Each rank is strictly better per tile and does a different job — a Gatling Pea
+  // is not a bigger Repeater, it is four peas instead of two.
+  const RANK_NAME = ["Chucker", "Bowpair", "Ballista Crew"];
 
   const FOES = {
     squire:   { name: "Squire",   hp: 110, speed: 22, dps: 22, purse: 8,  pts: 1 },
@@ -267,7 +329,7 @@
       coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 2.6,
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
       traps: new Array(ROWS).fill(true),
-      cool: { chucker: 0, digger: 0, barricade: 0 },
+      cool: { chucker: 0, digger: 0, barricade: 0, bow: 0, ballista: 0 },
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
       selUnit: null, selGob: null,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
@@ -395,20 +457,38 @@
         const target = S.foes.find(f => f.lane === g.row && f.hp > 0 && f.x > p.x - 10);
         g.wind = target && g.cd < 0.32 ? clamp(1 - g.cd / 0.32, 0, 1) : 0;
         if (target && g.cd <= 0) {
-          g.cd = 1.35; g.recoil = 1; g.wind = 0;
-          S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.48, lane: g.row,
-                         dmg: 22 * RANK_POWER(g.tier), trail: [], spin: 0 });
-          burst(p.x + CELL * 0.64, p.y + CELL * 0.48, 3,
+          g.recoil = 1; g.wind = 0;
+          // rank 1 lobs a rock, rank 2 is two goblins and a bow too big for either of
+          // them, rank 3 is a three-crew ballista. Different weapons, not bigger numbers.
+          if (g.tier === 1) {
+            g.cd = 1.35;
+            S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
+                           dmg: 22, pierce: 0, kind: "rock", trail: [], spin: 0 });
+            Sound.play("throw");
+          } else if (g.tier === 2) {
+            g.cd = 1.5;
+            S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.44, lane: g.row,
+                           dmg: 34, pierce: 2, kind: "arrow", trail: [], spin: 0 });
+            Sound.play("bow");
+          } else {
+            g.cd = 2.4;
+            S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.44, lane: g.row,
+                           dmg: 62, pierce: 99, kind: "bolt", trail: [], spin: 0 });
+            kick(3);
+            Sound.play("bolt");
+          }
+          burst(p.x + CELL * 0.64, p.y + CELL * 0.46, 3,
                 { colors: ["#cbbfa8"], spread: 70, size: [1.2, 2.2], dir: 0, cone: 1.1,
                   gravity: 260, life: [0.12, 0.25] });
-          Sound.play("throw");
         }
       }
 
       // The further forward it stands, the more it pulls out — and the more exposed
       // it is. That trade is the entire economic decision.
       if (g.type === "digger") {
-        const take = Math.round(yieldAt(g.col) * RANK_POWER(g.tier));
+        g.age = (g.age || 0) + dt;
+        const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, g.age / DIG_WARM);
+        const take = Math.max(1, Math.round(yieldAt(g.col) * warm));
         rate += take / DIG_EVERY;
         if (g.cd <= 0) {
           g.cd = DIG_EVERY;
@@ -435,10 +515,14 @@
       s.x += 430 * dt; s.spin += dt * 16;
       s.trail.push({ x: s.x, y: s.y });
       if (s.trail.length > 6) s.trail.shift();
-      const f = S.foes.find(f => f.lane === s.lane && f.hp > 0 && Math.abs(f.x - s.x) < 22);
+      const f = S.foes.find(f => f.lane === s.lane && f.hp > 0 && Math.abs(f.x - s.x) < 22
+                                 && !(s.hitSet && s.hitSet.has(f)));
       if (f) {
         f.hp -= s.dmg; f.hitT = 0.12; f.squash = 1; f.x += 3;
-        s.dead = true;
+        if (s.pierce > 0) {
+          (s.hitSet = s.hitSet || new Set()).add(f);
+          s.pierce--;
+        } else s.dead = true;
         burst(s.x, s.y, 7, { colors: ["#d8cbb4", "#8f8577"], spread: 220, size: [1.4, 3],
                              dir: Math.PI, cone: 2.2, gravity: 420, life: [0.14, 0.36] });
         ring(s.x, s.y, 22, "rgba(255,255,255,.5)", 2, 0.16);
@@ -562,6 +646,26 @@
     cx.fillStyle = "rgba(0,0,0,.34)";
     cx.beginPath(); cx.ellipse(cxp, cyp + (big ? 34 : 28) * grow, 24 * sx, 6 * grow, 0, 0, 6.284); cx.fill();
 
+    // extra crew stand behind, so a rank reads as more goblins rather than a bigger one
+    const crew = g.type === "chucker" ? g.tier - 1 : 0;
+    for (let i = crew; i >= 1; i--) {
+      cx.save();
+      cx.translate(cxp - 13 * i * K, cyp - 5 * i * K);
+      cx.scale(sx * 0.82, sy * 0.82);
+      cx.globalAlpha = 0.85;
+      cx.fillStyle = "#4f8a45";
+      cx.beginPath(); cx.ellipse(0, 0, 24, 26, 0, 0, 6.284); cx.fill();
+      cx.beginPath(); cx.moveTo(-21, -6); cx.lineTo(-36, -20); cx.lineTo(-23, 4); cx.closePath(); cx.fill();
+      cx.fillStyle = "#fdfbf4";
+      cx.beginPath(); cx.ellipse(-6, -7, 5.4, 6, 0, 0, 6.284); cx.fill();
+      cx.beginPath(); cx.ellipse(6, -7, 5.4, 6, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "#14110f";
+      cx.beginPath(); cx.arc(-5, -6, 2.4, 0, 6.284); cx.fill();
+      cx.beginPath(); cx.arc(7, -6, 2.4, 0, 6.284); cx.fill();
+      cx.restore();
+    }
+    cx.globalAlpha = 1;
+
     cx.save();
     cx.translate(cxp + lean, cyp);
     cx.scale(sx, sy);
@@ -587,6 +691,23 @@
     cx.fillStyle = "#fdfbf4";
     cx.fillRect(-5, rh * 0.12 + 5, 3.5, 4);
     cx.fillRect(2, rh * 0.12 + 5, 3.5, 4);
+
+    // the weapon, which is the whole point of a rank
+    if (g.type === "chucker" && g.tier === 2) {
+      cx.strokeStyle = "#8a6234"; cx.lineWidth = 4; cx.lineCap = "round";
+      cx.beginPath(); cx.arc(20, 0, 24, -1.15, 1.15); cx.stroke();
+      cx.strokeStyle = "#d9cdb4"; cx.lineWidth = 1.4;
+      cx.beginPath(); cx.moveTo(30, -22); cx.lineTo(30, 22); cx.stroke();
+    } else if (g.type === "chucker" && g.tier === 3) {
+      cx.fillStyle = "#6b4e2c";
+      cx.fillRect(6, -8, 40, 9);
+      cx.fillStyle = "#9c7643";
+      cx.fillRect(2, -16, 10, 26);
+      cx.strokeStyle = "#8a6234"; cx.lineWidth = 5; cx.lineCap = "round";
+      cx.beginPath(); cx.moveTo(30, -26); cx.lineTo(30, 26); cx.stroke();
+      cx.strokeStyle = "#d9cdb4"; cx.lineWidth = 1.6;
+      cx.beginPath(); cx.moveTo(30, -24); cx.lineTo(8, 0); cx.lineTo(30, 24); cx.stroke();
+    }
     cx.restore();
 
 
@@ -598,7 +719,7 @@
     }
     if (g.tier > 1) {
       cx.font = "bold 10px " + FONT; cx.fillStyle = "#f5dc9c"; cx.textAlign = "center";
-      cx.fillText(UNITS[g.type].name + " " + ["", "II", "III"][g.tier - 1], cxp, p.y + CELL + 2);
+      cx.fillText(RANK_NAME[g.tier - 1], cxp, p.y + CELL - 1);
     }
   }
 
@@ -759,9 +880,23 @@
         cx.beginPath(); cx.arc(t.x, t.y, 1.6 + i * 0.4, 0, 6.284); cx.fill();
       });
       cx.globalAlpha = 1;
-      cx.save(); cx.translate(s.x, s.y); cx.rotate(s.spin);
-      cx.fillStyle = "#c2b39c";
-      cx.beginPath(); cx.moveTo(-5, -3.5); cx.lineTo(4, -5); cx.lineTo(6, 2.5); cx.lineTo(-2.5, 5); cx.closePath(); cx.fill();
+      cx.save(); cx.translate(s.x, s.y);
+      if (s.kind === "rock") {
+        cx.rotate(s.spin);
+        cx.fillStyle = "#c2b39c";
+        cx.beginPath(); cx.moveTo(-5, -3.5); cx.lineTo(4, -5); cx.lineTo(6, 2.5); cx.lineTo(-2.5, 5); cx.closePath(); cx.fill();
+      } else if (s.kind === "arrow") {
+        cx.fillStyle = "#8a6234"; cx.fillRect(-14, -1.4, 22, 2.8);
+        cx.fillStyle = "#e6dfd4";
+        cx.beginPath(); cx.moveTo(8, -5); cx.lineTo(17, 0); cx.lineTo(8, 5); cx.closePath(); cx.fill();
+        cx.fillStyle = "#c9a24a"; cx.fillRect(-15, -4, 5, 8);
+      } else {
+        cx.fillStyle = "#6b4e2c"; cx.fillRect(-22, -2.6, 34, 5.2);
+        cx.fillStyle = "#f0e6cf";
+        cx.beginPath(); cx.moveTo(12, -8); cx.lineTo(26, 0); cx.lineTo(12, 8); cx.closePath(); cx.fill();
+        cx.fillStyle = "rgba(232,192,90,.35)";
+        cx.beginPath(); cx.ellipse(-16, 0, 16, 5, 0, 0, 6.284); cx.fill();
+      }
       cx.restore();
     }
 
@@ -847,6 +982,70 @@
   cv.addEventListener("mouseleave", () => { hover.col = -1; hover.row = -1; });
   cv.addEventListener("contextmenu", ev => { ev.preventDefault(); clearSel(); });
 
+  // One routine for both input styles. Returns true if something happened.
+  function tryPlace(key, col, row) {
+    const u = UNITS[key];
+    if (!u) return false;
+    const occ = gobAt(col, row);
+    if (S.cool[key] > 0) { Sound.play("deny"); denyCard(key); return false; }
+    if (S.coins < u.cost) { Sound.play("deny"); denyCard(key); return false; }
+
+    if (u.onto) {
+      // an upgrade goes onto an existing goblin of the right kind and rank, the way
+      // a Gatling Pea is planted onto a Repeater
+      if (!occ || occ.type !== u.onto || occ.tier !== u.rank) {
+        Sound.play("deny");
+        popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12,
+                "NEEDS A " + RANK_NAME[u.rank - 1].toUpperCase(), "#d1553f");
+        return false;
+      }
+      S.coins -= u.cost;
+      occ.tier++; occ.hp = maxHpOf(occ); occ.squash = 1.4; occ.born = S.t;
+      const gp = cellOf(occ);
+      burst(gp.x + CELL / 2, gp.y + CELL / 2, 24,
+            { colors: ["#fff3cf", "#e8c05a", UNITS[occ.type].tint], spread: 320, size: [1.8, 4.6] });
+      ring(gp.x + CELL / 2, gp.y + CELL / 2, 96, "rgba(255,243,207,.85)", 4, 0.4);
+      popText(gp.x + CELL / 2, gp.y + 4, RANK_NAME[occ.tier - 1].toUpperCase(), "#fff3cf");
+      kick(9); stop(0.08); flash(0.24); Sound.play("merge");
+      S.cool[key] = u.recharge;
+      S.selUnit = null; renderRack();
+      return true;
+    }
+
+    if (occ) { Sound.play("deny"); return false; }
+    S.coins -= u.cost;
+    S.goblins.push({ type: key, col, row, hp: u.hp, tier: 1, born: S.t, age: 0,
+                     cd: key === "digger" ? 1.2 : 0.5,
+                     squash: 0, land: 1, recoil: 0, hurtT: 0, wind: 0 });
+    const gx = OX + col * CELL + CELL / 2, gy = OY + row * CELL + CELL * 0.6;
+    burst(gx, gy + 18, 10, { colors: ["#4a4150", "#3b3340", "#5a5060"], spread: 180,
+                             size: [1.4, 3.4], gravity: 520, life: [0.18, 0.4] });
+    ring(gx, gy + 16, 40, "rgba(160,150,170,.4)", 2.2, 0.26);
+    kick(3); stop(0.02); Sound.play("place");
+    S.cool[key] = u.recharge;
+    S.selUnit = null; renderRack();
+    return true;
+  }
+
+  // Dig one up. Free for a moment in case of a misclick, then half back.
+  const GRACE = 3;
+  function refundOf(g) {
+    let spent = UNITS[g.type].cost;
+    for (let t = 1; t < g.tier; t++) spent += UNITS[UPGRADES[t - 1]].cost;
+    return (S.t - g.born <= GRACE) ? spent : Math.round(spent * 0.5);
+  }
+  function removeGoblin(g) {
+    const back = refundOf(g), gp = cellOf(g);
+    S.coins += back;
+    S.goblins = S.goblins.filter(x => x !== g);
+    if (S.selGob === g) S.selGob = null;
+    popText(gp.x + CELL / 2, gp.y + 10, "+" + back, "#e8c05a");
+    burst(gp.x + CELL / 2, gp.y + CELL * 0.6, 10,
+          { colors: ["#4a4150", "#c9a24a"], spread: 170, size: [1.4, 3], life: [0.2, 0.45] });
+    Sound.play("dig");
+    bumpCoins();
+  }
+
   cv.addEventListener("click", ev => {
     Sound.wake();
     if (S.over) { newRun(); renderAll(); return; }
@@ -854,42 +1053,12 @@
     const p = toBoard(ev);
     const col = Math.floor((p.x - OX) / CELL), row = Math.floor((p.y - OY) / CELL);
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+
+    if (S.selUnit) { tryPlace(S.selUnit, col, row); return; }
     const occ = gobAt(col, row);
-
-    if (S.selUnit) {
-      const u = UNITS[S.selUnit];
-      if (occ) { Sound.play("deny"); return; }
-      if (S.cool[S.selUnit] > 0) { Sound.play("deny"); denyCard(S.selUnit); return; }
-      if (S.coins < u.cost) { Sound.play("deny"); denyCard(S.selUnit); return; }
-      S.coins -= u.cost;
-      S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, tier: 1,
-                       cd: S.selUnit === "digger" ? 1.2 : 0.5,
-                       squash: 0, land: 1, recoil: 0, hurtT: 0, wind: 0 });
-      const gx = OX + col * CELL + CELL / 2, gy = OY + row * CELL + CELL * 0.6;
-      burst(gx, gy + 18, 10, { colors: ["#4a4150", "#3b3340", "#5a5060"], spread: 180,
-                               size: [1.4, 3.4], gravity: 520, life: [0.18, 0.4] });
-      ring(gx, gy + 16, 40, "rgba(160,150,170,.4)", 2.2, 0.26);
-      kick(3); stop(0.02); Sound.play("place");
-      S.cool[S.selUnit] = u.recharge;
-      S.selUnit = null; renderRack();
-      return;
-    }
-
-    if (occ) {
-      if (!S.selGob) { S.selGob = occ; Sound.play("select"); return; }
-      if (S.selGob === occ) { S.selGob = null; return; }
-      if (occ.type === S.selGob.type && occ.tier === S.selGob.tier && occ.tier < MAX_TIER) {
-        const from = S.selGob, gp = cellOf(occ);
-        occ.tier++; occ.hp = maxHpOf(occ); occ.squash = 1.4;
-        S.goblins = S.goblins.filter(g => g !== from);
-        S.selGob = null;
-        burst(gp.x + CELL / 2, gp.y + CELL / 2, 24,
-              { colors: ["#fff3cf", "#e8c05a", UNITS[occ.type].tint], spread: 320, size: [1.8, 4.6] });
-        ring(gp.x + CELL / 2, gp.y + CELL / 2, 96, "rgba(255,243,207,.85)", 4, 0.4);
-        popText(gp.x + CELL / 2, gp.y + 6, UNITS[occ.type].name + " " + ["", "II", "III"][occ.tier - 1], "#fff3cf");
-        kick(10); stop(0.09); flash(0.26); Sound.play("merge");
-      } else { S.selGob = occ; Sound.play("select"); }
-    } else S.selGob = null;
+    S.selGob = (occ && S.selGob !== occ) ? occ : null;
+    if (S.selGob) Sound.play("select");
+    renderInspector();
   });
 
   function clearSel() { S.selUnit = null; S.selGob = null; renderRack(); }
@@ -897,10 +1066,21 @@
 
   // ==================================================================== chrome
   const DESC = {
-    chucker: "Throws rocks down the lane.",
-    digger: "Digs where you put it. The deeper the richer.",
-    barricade: "Doesn't fight. Won't move.",
+    chucker:  "Lobs a rock. One goblin, one arm.",
+    digger:   "Digs where you put it. Deeper is richer, and its shaft deepens as it works.",
+    barricade:"Doesn't fight. Won't move.",
+    bow:      "Onto a Chucker. Two goblins, one oversized bow — the arrow goes through two.",
+    ballista: "Onto a Bowpair. Three goblins and a siege engine. Skewers the whole lane.",
   };
+  let drag = null;
+  function cellUnder(clientX, clientY) {
+    const r = cv.getBoundingClientRect();
+    if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
+    const x = (clientX - r.left) * (W / r.width), y = (clientY - r.top) * (H / r.height);
+    const col = Math.floor((x - OX) / CELL), row = Math.floor((y - OY) / CELL);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
+    return { col, row };
+  }
   const rack = document.getElementById("rack");
   function denyCard(key) {
     const el = rack.querySelector('[data-unit="' + key + '"]');
@@ -920,6 +1100,38 @@
                     '<span class="card-desc">' + DESC[key] + "</span>" +
                     '<span class="cd" data-cd="' + key + '"></span>';
       b.addEventListener("mouseenter", () => { if (!b.disabled) Sound.play("hover"); });
+      // Drag-to-place alongside tap-to-select, as the phone version of the original
+      // offers both. A tap must fall through to the click handler untouched — treating
+      // every pointerdown as a drag silently cancelled every selection.
+      b.addEventListener("pointerdown", ev => {
+        if (b.disabled) return;
+        Sound.wake();
+        drag = { key, id: ev.pointerId, sx: ev.clientX, sy: ev.clientY, moved: false };
+        b.setPointerCapture(ev.pointerId);
+      });
+      b.addEventListener("pointermove", ev => {
+        if (!drag || drag.id !== ev.pointerId) return;
+        if (!drag.moved && Math.hypot(ev.clientX - drag.sx, ev.clientY - drag.sy) > 9) {
+          drag.moved = true;
+          b.classList.add("drag");
+          S.selUnit = drag.key;            // so the ghost previews the right thing
+        }
+        if (!drag.moved) return;
+        const c = cellUnder(ev.clientX, ev.clientY);
+        hover.col = c ? c.col : -1; hover.row = c ? c.row : -1;
+      });
+      b.addEventListener("pointerup", ev => {
+        if (!drag || drag.id !== ev.pointerId) return;
+        const wasDrag = drag.moved, key = drag.key;
+        drag = null;
+        b.classList.remove("drag");
+        if (!wasDrag) return;              // a tap: the click handler selects as usual
+        const c = cellUnder(ev.clientX, ev.clientY);
+        hover.col = -1; hover.row = -1;
+        if (c) tryPlace(key, c.col, c.row);
+        else { S.selUnit = null; renderRack(); }
+      });
+      b.addEventListener("pointercancel", () => { b.classList.remove("drag"); drag = null; });
       b.addEventListener("click", () => {
         Sound.wake();
         S.selUnit = S.selUnit === key ? null : key;
@@ -928,6 +1140,30 @@
       rack.appendChild(b);
     }
   }
+
+  const inspEmpty = document.getElementById("insp-empty");
+  const inspBody = document.getElementById("insp-body");
+  const inspName = document.getElementById("insp-name");
+  const inspMeta = document.getElementById("insp-meta");
+  function renderInspector() {
+    const g = S.selGob;
+    if (!g || g.hp <= 0) { inspEmpty.hidden = false; inspBody.hidden = true; return; }
+    inspEmpty.hidden = true; inspBody.hidden = false;
+    inspName.textContent = g.type === "chucker" ? RANK_NAME[g.tier - 1] : UNITS[g.type].name;
+    const bits = [Math.round(g.hp) + "/" + Math.round(maxHpOf(g)) + " hp"];
+    if (g.type === "digger") {
+      const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, (g.age || 0) / DIG_WARM);
+      bits.push("shaft " + Math.round(warm * 100) + "%");
+      bits.push("+" + Math.max(1, Math.round(yieldAt(g.col) * warm)) + " per pull");
+    }
+    const free = S.t - g.born <= GRACE;
+    bits.push(free ? "dig up: full refund" : "dig up: half back");
+    inspMeta.textContent = bits.join("  ·  ");
+  }
+  document.getElementById("insp-dig").addEventListener("click", () => {
+    if (S.selGob) removeGoblin(S.selGob);
+    renderInspector();
+  });
 
   const pipsEl = document.getElementById("pips");
   function renderPips() {
@@ -964,7 +1200,7 @@
     muteBtn.textContent = on ? "Sound on" : "Sound off";
     muteBtn.classList.toggle("on", on);
   });
-  function renderAll() { renderRack(); renderPips(); }
+  function renderAll() { renderRack(); renderPips(); renderInspector(); }
 
   // ====================================================================== loop
   let last = performance.now(), affordSig = null;
@@ -981,6 +1217,7 @@
       : S.waveIx < 0 ? "—" : (S.waveIx + 1) + "/" + WAVES.length;
     veinsEl.textContent = S.goblins.filter(g => g.type === "digger").length + " digging";
 
+    if (S.selGob) renderInspector();
     for (const k in S.cool) {
       const el = rack.querySelector('[data-cd="' + k + '"]');
       if (el) el.style.height = (S.cool[k] / UNITS[k].recharge * 100).toFixed(1) + "%";
