@@ -63,6 +63,9 @@
   .card-name { font-family: var(--display); font-size: 15px; letter-spacing: .03em; text-transform: uppercase; }
   .card-cost { font-family: var(--data); font-size: 11.5px; color: var(--gold); font-variant-numeric: tabular-nums; }
   .card-desc { font-size: 11px; color: var(--ink-dim); line-height: 1.3; }
+  .card { position: relative; overflow: hidden; }
+  .cd { position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none;
+        background: rgba(10, 8, 13, .72); border-top: 1px solid rgba(232,192,90,.5); }
 
   .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .btn { font-family: var(--body); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
@@ -114,11 +117,12 @@
   </div>
 
   <p class="foot">
-    Economy is <b>positional</b>. Gold sits in veins scattered through the rock, and a Digger only earns
-    if it is standing on one &mdash; so where the gold is decides where you have to defend. The richest
-    seams are the deepest, out where the pursuers come in. Veins run dry, so a solved board does not
-    stay solved: you dig your miners up and move them. <b>Nothing needs collecting</b> &mdash; gold flies
-    home on its own.
+    Economy is <b>positional</b>, but nothing is randomly placed. The rock is seamed with gold that
+    thickens toward the far end, and a Digger takes whatever is under it &mdash; so how much it earns is
+    decided entirely by how far forward you dare put it. Nobody is told this: the ground is visibly
+    richer out there, the hovered cell shows its worth in coins rather than digits, and a fat pull
+    throws more rock. Every card recharges after use, so you cannot simply spam the cheap one.
+    <b>Nothing needs collecting</b> &mdash; gold flies home on its own.
   </p>
 </div>
 
@@ -226,19 +230,24 @@
   const ease = t => t * t * (3 - 2 * t);
   const RANK_POWER = t => Math.pow(1.7, t - 1);
 
+  // Recharge per card, as the original gives every seed packet its own. Without it
+  // you simply spam the cheapest thing the moment you can afford it.
   const UNITS = {
-    chucker: { name: "Chucker", cost: 100, hp: 120, tint: "#6fbf5b",
-               desc: "Throws rocks down the lane." },
-    digger:  { name: "Digger",  cost: 50,  hp: 95,  tint: "#c9d45f",
-               desc: "Only earns on a vein. Deeper seams pay more." },
-    barricade:{ name: "Barricade", cost: 50, hp: 520, tint: "#3f8a4a",
-               desc: "Doesn't fight. Won't move." },
+    chucker:  { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", recharge: 7.5 },
+    digger:   { name: "Digger",    cost: 50,  hp: 95,  tint: "#c9d45f", recharge: 7.5 },
+    barricade:{ name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", recharge: 22 },
   };
 
+  // A Digger's take is a function of how far forward you put it. No tiles, no lottery:
+  // the gradient is continuous and the choice is entirely yours.
+  const DIG_EVERY = 5;
+  const yieldAt = col => Math.round(6 + col * 1.55);
+  const RICH_MAX = yieldAt(COLS - 1);
+
   const FOES = {
-    squire:   { name: "Squire",   hp: 110, speed: 22, dps: 22, purse: 12, pts: 1 },
-    scout:    { name: "Scout",    hp: 74,  speed: 42, dps: 16, purse: 10, pts: 2 },
-    sergeant: { name: "Sergeant", hp: 290, speed: 18, dps: 30, purse: 22, pts: 2 },
+    squire:   { name: "Squire",   hp: 110, speed: 22, dps: 22, purse: 8,  pts: 1 },
+    scout:    { name: "Scout",    hp: 74,  speed: 42, dps: 16, purse: 7,  pts: 2 },
+    sergeant: { name: "Sergeant", hp: 290, speed: 18, dps: 30, purse: 15, pts: 2 },
   };
 
   const S_ = "squire", C_ = "scout", G_ = "sergeant";
@@ -258,42 +267,19 @@
       coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 2.6,
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
       traps: new Array(ROWS).fill(true),
+      cool: { chucker: 0, digger: 0, barricade: 0 },
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
-      veins: [], selUnit: null, selGob: null,
+      selUnit: null, selGob: null,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
       over: false, won: false, paused: false, t: 0, killed: 0, mined: 0, rate: 0,
     };
-    seedVeins();
   }
 
-  // The richest seams sit deepest, out where the pursuers walk in. That is the whole
-  // decision: cheap safe gold at the back, or defend far forward for the good stuff.
-  function seedVeins() {
-    S.veins = [];
-    for (let r = 0; r < ROWS; r++) {
-      const n = 1 + (Math.random() < 0.55 ? 1 : 0);
-      const used = new Set();
-      for (let i = 0; i < n; i++) {
-        let c = 1 + ((Math.random() * (COLS - 2)) | 0), guard = 0;
-        while (used.has(c) && guard++ < 12) c = 1 + ((Math.random() * (COLS - 2)) | 0);
-        used.add(c);
-        const depth = c / (COLS - 1);
-        S.veins.push({
-          col: c, row: r,
-          yield: Math.round(10 + depth * 26),        // gold per pull
-          left:  Math.round(150 + depth * 260),      // until it runs dry
-          max:   Math.round(150 + depth * 260),
-          glint: Math.random() * 6.28,
-        });
-      }
-    }
-  }
   newRun();
 
   const cellOf = g => ({ x: OX + g.col * CELL, y: OY + g.row * CELL });
   const laneY = r => OY + r * CELL;
   const gobAt = (c, r) => S.goblins.find(g => g.col === c && g.row === r && g.hp > 0);
-  const veinAt = (c, r) => S.veins.find(v => v.col === c && v.row === r);
   const maxHpOf = g => UNITS[g.type].hp * RANK_POWER(g.tier);
 
   const kick = a => { S.shake = Math.min(12, Math.max(S.shake, a)); };
@@ -376,6 +362,7 @@
   // ==================================================================== update
   function update(dt) {
     S.t += dt;
+    for (const k in S.cool) if (S.cool[k] > 0) S.cool[k] = Math.max(0, S.cool[k] - dt);
     if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 95);
     if (S.flash > 0) S.flash = Math.max(0, S.flash - dt * 3.4);
     if (S.banner > 0) S.banner -= dt;
@@ -418,29 +405,25 @@
         }
       }
 
-      // A Digger is worth nothing off a vein. That is the point of the unit.
+      // The further forward it stands, the more it pulls out — and the more exposed
+      // it is. That trade is the entire economic decision.
       if (g.type === "digger") {
-        const v = veinAt(g.col, g.row);
-        if (v && v.left > 0) {
-          rate += (v.yield * RANK_POWER(g.tier)) / 4;
-          if (g.cd <= 0) {
-            g.cd = 4;
-            const take = Math.min(v.left, Math.round(v.yield * RANK_POWER(g.tier)));
-            v.left -= take;
-            S.mined += take;
-            g.squash = 1;
-            spill(p.x + CELL / 2, p.y + CELL * 0.55, take);
-            burst(p.x + CELL / 2, p.y + CELL * 0.72, 6,
-                  { colors: ["#6b5a52", "#8a7768", "#c9a24a"], spread: 130, size: [1.4, 3],
-                    gravity: 460, life: [0.22, 0.45] });
-            Sound.play("dig");
-            if (v.left <= 0) {
-              popText(p.x + CELL / 2, p.y + 8, "SEAM DRY", "#d1553f");
-              ring(p.x + CELL / 2, p.y + CELL / 2, 48, "rgba(209,85,63,.6)", 2.5, 0.4);
-              Sound.play("dry");
-            }
-          }
-        } else if (g.cd <= 0) g.cd = 1;
+        const take = Math.round(yieldAt(g.col) * RANK_POWER(g.tier));
+        rate += take / DIG_EVERY;
+        if (g.cd <= 0) {
+          g.cd = DIG_EVERY;
+          S.mined += take;
+          g.squash = 1;
+          spill(p.x + CELL / 2, p.y + CELL * 0.55, take);
+          // a richer pull throws more rock, so the gradient is visible in the payout
+          const heft = take / RICH_MAX;
+          burst(p.x + CELL / 2, p.y + CELL * 0.72, Math.round(4 + heft * 9),
+                { colors: ["#6b5a52", "#8a7768", "#c9a24a"], spread: 110 + heft * 130,
+                  size: [1.3, 2.4 + heft * 2.4], gravity: 460, life: [0.22, 0.5] });
+          ring(p.x + CELL / 2, p.y + CELL * 0.6, 20 + heft * 34,
+               "rgba(232,192,90," + (0.2 + heft * 0.4) + ")", 2, 0.3);
+          Sound.play("dig");
+        }
       }
     }
     S.rate = rate;
@@ -551,7 +534,6 @@
     S.rings = S.rings.filter(r => r.t < r.life);
     for (const p of S.pops) p.t += dt;
     S.pops = S.pops.filter(p => p.t < p.life);
-    for (const v of S.veins) v.glint += dt * 1.6;
   }
 
   // =================================================================== drawing
@@ -607,12 +589,6 @@
     cx.fillRect(2, rh * 0.12 + 5, 3.5, 4);
     cx.restore();
 
-    // a Digger with no seam under it is visibly doing nothing
-    if (g.type === "digger" && !(veinAt(g.col, g.row) || {}).left) {
-      cx.font = "9px " + FONT; cx.textAlign = "center";
-      cx.fillStyle = "#d1553f";
-      cx.fillText("NO SEAM", cxp, p.y + CELL - 4);
-    }
 
     const mx = maxHpOf(g);
     if (g.hp < mx) {
@@ -674,39 +650,6 @@
 
   const FONT = "'Trebuchet MS', sans-serif";
 
-  function drawVein(v) {
-    const x = OX + v.col * CELL, y = OY + v.row * CELL;
-    const frac = v.left / v.max;
-    if (frac <= 0) {
-      cx.fillStyle = "rgba(60,54,66,.5)";
-      cx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
-      cx.strokeStyle = "rgba(90,82,98,.55)"; cx.lineWidth = 1.5;
-      cx.strokeRect(x + 4, y + 4, CELL - 8, CELL - 8);
-      cx.font = "8.5px " + FONT; cx.fillStyle = "#6a6070"; cx.textAlign = "center";
-      cx.fillText("DRY", x + CELL / 2, y + CELL - 6);
-      return;
-    }
-    const glow = 0.1 + frac * 0.2 + Math.sin(v.glint) * 0.03;
-    cx.fillStyle = "rgba(232,192,90," + glow + ")";
-    cx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
-    cx.strokeStyle = "rgba(232,192,90," + (0.3 + frac * 0.45) + ")";
-    cx.lineWidth = 2;
-    cx.strokeRect(x + 3, y + 3, CELL - 6, CELL - 6);
-    // nuggets in the rock, thinning as the seam empties
-    const n = Math.max(1, Math.round(frac * 7));
-    for (let i = 0; i < n; i++) {
-      const a = (i * 2.399 + v.col) % 1, b = (i * 4.771 + v.row) % 1;
-      const px = x + 10 + a * (CELL - 20), py = y + 10 + b * (CELL - 20);
-      cx.fillStyle = "#c9a24a";
-      cx.beginPath(); cx.ellipse(px, py, 4.2, 3, a * 3, 0, 6.284); cx.fill();
-      cx.fillStyle = "rgba(255,247,214,.8)";
-      cx.beginPath(); cx.arc(px - 1.2, py - 1.2, 1.3, 0, 6.284); cx.fill();
-    }
-    cx.font = "bold 9px " + FONT; cx.textAlign = "center";
-    cx.fillStyle = "rgba(255,238,190,.85)";
-    cx.fillText("+" + v.yield, x + CELL / 2, y + CELL - 5);
-  }
-
   function render() {
     cx.clearRect(0, 0, W, H);
     cx.fillStyle = "#141119"; cx.fillRect(0, 0, W, H);
@@ -720,6 +663,30 @@
       cx.fillStyle = r % 2 ? "#241f26" : "#2a2430";
       cx.fillRect(OX, OY + r * CELL, COLS * CELL, CELL);
     }
+    // Gold seamed through the rock, thickening toward the far end. Nothing says
+    // "deeper pays more" — you can see it in the ground before you place anything.
+    for (let c = 0; c < COLS; c++) {
+      const depth = c / (COLS - 1);
+      const warm = 0.012 + depth * 0.055;
+      cx.fillStyle = "rgba(232,192,90," + warm + ")";
+      cx.fillRect(OX + c * CELL, OY, CELL, ROWS * CELL);
+      const n = Math.round(depth * depth * 9);
+      for (let r = 0; r < ROWS; r++) {
+        for (let i = 0; i < n; i++) {
+          const a = ((i * 2.399 + c * 1.7 + r * 0.31) % 1);
+          const b = ((i * 4.771 + r * 2.3 + c * 0.53) % 1);
+          const px = OX + c * CELL + 6 + a * (CELL - 12);
+          const py = OY + r * CELL + 6 + b * (CELL - 12);
+          const sz = 1 + depth * 2.4;
+          cx.fillStyle = "rgba(201,162,74," + (0.3 + depth * 0.45) + ")";
+          cx.beginPath(); cx.ellipse(px, py, sz, sz * 0.72, a * 3, 0, 6.284); cx.fill();
+          if (depth > 0.55) {
+            cx.fillStyle = "rgba(255,244,206,.5)";
+            cx.beginPath(); cx.arc(px - sz * 0.3, py - sz * 0.3, sz * 0.34, 0, 6.284); cx.fill();
+          }
+        }
+      }
+    }
     cx.strokeStyle = "rgba(0,0,0,.35)"; cx.lineWidth = 1;
     for (let c = 0; c <= COLS; c++) {
       cx.beginPath(); cx.moveTo(OX + c * CELL, OY); cx.lineTo(OX + c * CELL, OY + ROWS * CELL); cx.stroke();
@@ -728,18 +695,26 @@
       cx.beginPath(); cx.moveTo(OX, OY + r * CELL); cx.lineTo(OX + COLS * CELL, OY + r * CELL); cx.stroke();
     }
 
-    S.veins.forEach(drawVein);
-
     if (S.selUnit && hover.col >= 0 && !S.over) {
       const u = UNITS[S.selUnit];
-      const v = veinAt(hover.col, hover.row);
-      const needsVein = S.selUnit === "digger";
-      const ok = !gobAt(hover.col, hover.row) && S.coins >= u.cost && (!needsVein || (v && v.left > 0));
+      const ok = !gobAt(hover.col, hover.row) && S.coins >= u.cost && S.cool[S.selUnit] <= 0;
       cx.fillStyle = ok ? "rgba(111,191,91,.2)" : "rgba(209,85,63,.2)";
       cx.fillRect(OX + hover.col * CELL, OY + hover.row * CELL, CELL, CELL);
       cx.strokeStyle = ok ? "rgba(111,191,91,.75)" : "rgba(209,85,63,.75)";
       cx.lineWidth = 2;
       cx.strokeRect(OX + hover.col * CELL + 2, OY + hover.row * CELL + 2, CELL - 4, CELL - 4);
+      if (S.selUnit === "digger") {
+        // worth shown as coins, not digits
+        const pips = Math.max(1, Math.round(yieldAt(hover.col) / RICH_MAX * 5));
+        const bx = OX + hover.col * CELL + CELL / 2, by = OY + hover.row * CELL + CELL - 12;
+        for (let i = 0; i < pips; i++) {
+          const px = bx - (pips - 1) * 5 + i * 10;
+          cx.fillStyle = "#8a7134";
+          cx.beginPath(); cx.ellipse(px, by, 4.2, 4.6, 0, 0, 6.284); cx.fill();
+          cx.fillStyle = "#e8c05a";
+          cx.beginPath(); cx.ellipse(px, by - 0.6, 3.2, 3.6, 0, 0, 6.284); cx.fill();
+        }
+      }
     }
 
     // caravan
@@ -883,13 +858,8 @@
 
     if (S.selUnit) {
       const u = UNITS[S.selUnit];
-      const v = veinAt(col, row);
       if (occ) { Sound.play("deny"); return; }
-      if (S.selUnit === "digger" && !(v && v.left > 0)) {
-        Sound.play("deny");
-        popText(OX + col * CELL + CELL / 2, OY + row * CELL + 14, "NO SEAM HERE", "#d1553f");
-        return;
-      }
+      if (S.cool[S.selUnit] > 0) { Sound.play("deny"); denyCard(S.selUnit); return; }
       if (S.coins < u.cost) { Sound.play("deny"); denyCard(S.selUnit); return; }
       S.coins -= u.cost;
       S.goblins.push({ type: S.selUnit, col, row, hp: u.hp, tier: 1,
@@ -900,6 +870,7 @@
                                size: [1.4, 3.4], gravity: 520, life: [0.18, 0.4] });
       ring(gx, gy + 16, 40, "rgba(160,150,170,.4)", 2.2, 0.26);
       kick(3); stop(0.02); Sound.play("place");
+      S.cool[S.selUnit] = u.recharge;
       S.selUnit = null; renderRack();
       return;
     }
@@ -925,6 +896,11 @@
   addEventListener("keydown", e => { if (e.key === "Escape") clearSel(); });
 
   // ==================================================================== chrome
+  const DESC = {
+    chucker: "Throws rocks down the lane.",
+    digger: "Digs where you put it. The deeper the richer.",
+    barricade: "Doesn't fight. Won't move.",
+  };
   const rack = document.getElementById("rack");
   function denyCard(key) {
     const el = rack.querySelector('[data-unit="' + key + '"]');
@@ -937,11 +913,12 @@
       const b = document.createElement("button");
       b.className = "card"; b.type = "button"; b.dataset.unit = key;
       b.style.setProperty("--unit", u.tint);
-      b.disabled = S.coins < u.cost;
+      b.disabled = S.coins < u.cost || S.cool[key] > 0;
       b.setAttribute("aria-pressed", String(S.selUnit === key));
       b.innerHTML = '<span class="card-name">' + u.name + "</span>" +
                     '<span class="card-cost">' + u.cost + "</span>" +
-                    '<span class="card-desc">' + u.desc + "</span>";
+                    '<span class="card-desc">' + DESC[key] + "</span>" +
+                    '<span class="cd" data-cd="' + key + '"></span>';
       b.addEventListener("mouseenter", () => { if (!b.disabled) Sound.play("hover"); });
       b.addEventListener("click", () => {
         Sound.wake();
@@ -1002,10 +979,13 @@
     rateEl.textContent = "+" + S.rate.toFixed(1) + " / sec";
     waveEl.textContent = S.over ? (S.won ? "clear" : "lost")
       : S.waveIx < 0 ? "—" : (S.waveIx + 1) + "/" + WAVES.length;
-    const live = S.veins.filter(v => v.left > 0).length;
-    veinsEl.textContent = live + " of " + S.veins.length + " seams left";
+    veinsEl.textContent = S.goblins.filter(g => g.type === "digger").length + " digging";
 
-    const sig = Object.keys(UNITS).map(k => S.coins >= UNITS[k].cost).join("");
+    for (const k in S.cool) {
+      const el = rack.querySelector('[data-cd="' + k + '"]');
+      if (el) el.style.height = (S.cool[k] / UNITS[k].recharge * 100).toFixed(1) + "%";
+    }
+    const sig = Object.keys(UNITS).map(k => (S.coins >= UNITS[k].cost) + ":" + (S.cool[k] > 0)).join("");
     if (sig !== affordSig) { affordSig = sig; renderRack(); }
     requestAnimationFrame(frame);
   }
