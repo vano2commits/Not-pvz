@@ -1,0 +1,415 @@
+<title>Hoard — Progression proposal</title>
+
+<style>
+  :root {
+    --bg:        #f7f4ef;
+    --surface:   #ffffff;
+    --sunken:    #efeae1;
+    --line:      #ddd5c8;
+    --ink:       #22201f;
+    --ink-soft:  #5d5750;
+    --ink-faint: #8b8378;
+    --gold:      #9a6f10;
+    --gold-bg:   #f6ecd2;
+    --green:     #3d6b34;
+    --green-bg:  #e6efe0;
+    --red:       #a33b28;
+    --red-bg:    #f7e4df;
+    --display: Impact, Haettenschweiler, "Arial Narrow Bold", "Franklin Gothic Bold", sans-serif;
+    --body: "Trebuchet MS", "Segoe UI", Candara, sans-serif;
+    --data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #100e13;
+      --surface:   #1b1720;
+      --sunken:    #17141b;
+      --line:      #342d3b;
+      --ink:       #e8e1d6;
+      --ink-soft:  #b6ada2;
+      --ink-faint: #857c8c;
+      --gold:      #e8c05a;
+      --gold-bg:   #2a2216;
+      --green:     #8ed07a;
+      --green-bg:  #1c2618;
+      --red:       #e0897a;
+      --red-bg:    #2a1a18;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #100e13;
+    --surface:   #1b1720;
+    --sunken:    #17141b;
+    --line:      #342d3b;
+    --ink:       #e8e1d6;
+    --ink-soft:  #b6ada2;
+    --ink-faint: #857c8c;
+    --gold:      #e8c05a;
+    --gold-bg:   #2a2216;
+    --green:     #8ed07a;
+    --green-bg:  #1c2618;
+    --red:       #e0897a;
+    --red-bg:    #2a1a18;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--body); line-height: 1.62; font-size: 16px;
+  }
+  .page { max-width: 940px; margin: 0 auto; padding: 40px 22px 90px;
+          display: flex; flex-direction: column; gap: 26px; }
+
+  h1 { font-family: var(--display); font-size: clamp(34px, 7vw, 62px); margin: 0;
+       text-transform: uppercase; letter-spacing: .01em; line-height: .92;
+       color: var(--gold); text-wrap: balance; }
+  .eyebrow { font-family: var(--data); font-size: 11px; letter-spacing: .18em;
+             text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+  .lede { font-size: 19px; color: var(--ink-soft); margin: 0; text-wrap: balance; }
+  h2 { font-family: var(--display); font-size: clamp(22px, 3.6vw, 31px); margin: 22px 0 0;
+       text-transform: uppercase; letter-spacing: .02em; line-height: 1.05;
+       display: flex; align-items: baseline; gap: 12px; text-wrap: balance; }
+  h2 .n { font-family: var(--data); font-size: 12px; letter-spacing: .12em;
+          color: var(--gold); border: 1px solid var(--line); border-radius: 3px;
+          padding: 2px 6px; flex: none; }
+  h3 { font-size: 15px; text-transform: uppercase; letter-spacing: .1em;
+       color: var(--ink-faint); margin: 14px 0 0; font-weight: 700; }
+  p { margin: 0; max-width: 68ch; }
+  ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; max-width: 68ch; }
+  strong { color: var(--ink); }
+  a { color: var(--gold); }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+
+  .tag { font-family: var(--data); font-size: 10px; letter-spacing: .09em;
+         text-transform: uppercase; padding: 2px 6px; border-radius: 3px;
+         border: 1px solid var(--line); color: var(--ink-faint);
+         background: var(--sunken); white-space: nowrap; vertical-align: 2px; }
+  .tag.ev { color: var(--green); background: var(--green-bg); border-color: var(--green); }
+  .tag.mine { color: var(--gold); background: var(--gold-bg); border-color: var(--gold); }
+  .tag.cut { color: var(--red); background: var(--red-bg); border-color: var(--red); }
+
+  .note { background: var(--sunken); border: 1px solid var(--line);
+          border-left: 3px solid var(--gold); border-radius: 3px; padding: 14px 16px;
+          display: flex; flex-direction: column; gap: 8px; }
+  .note.warn { border-left-color: var(--red); }
+  .note.good { border-left-color: var(--green); }
+  .note-label { font-family: var(--data); font-size: 10px; letter-spacing: .14em;
+                text-transform: uppercase; color: var(--ink-faint); }
+
+  /* the three loops */
+  .loops { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .loop { background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+          padding: 16px; display: flex; flex-direction: column; gap: 9px; }
+  .loop-when { font-family: var(--data); font-size: 10.5px; letter-spacing: .13em;
+               text-transform: uppercase; color: var(--gold); }
+  .loop-what { font-family: var(--display); font-size: 21px; text-transform: uppercase;
+               letter-spacing: .02em; line-height: 1.05; }
+  .loop-body { font-size: 14.5px; color: var(--ink-soft); }
+  .loop-keep { font-family: var(--data); font-size: 12px; color: var(--ink-faint);
+               border-top: 1px solid var(--line); padding-top: 8px; margin-top: auto; }
+
+  /* route card mock */
+  .routes { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .route { background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+           overflow: hidden; display: flex; flex-direction: column; }
+  .route-top { padding: 12px 14px 10px; display: flex; flex-direction: column; gap: 3px;
+               border-bottom: 1px dashed var(--line); }
+  .route-kind { font-family: var(--data); font-size: 10px; letter-spacing: .14em;
+                text-transform: uppercase; color: var(--ink-faint); }
+  .route-name { font-family: var(--display); font-size: 20px; text-transform: uppercase;
+                letter-spacing: .02em; line-height: 1.06; }
+  .route-row { padding: 10px 14px; display: flex; gap: 10px; align-items: baseline;
+               font-size: 14px; }
+  .route-row + .route-row { border-top: 1px solid var(--line); }
+  .route-key { font-family: var(--data); font-size: 10px; letter-spacing: .1em;
+               text-transform: uppercase; width: 56px; flex: none; }
+  .route-row.cost .route-key { color: var(--red); }
+  .route-row.gain .route-key { color: var(--green); }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px;
+            background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { font-family: var(--data); font-size: 10px; letter-spacing: .12em;
+       text-transform: uppercase; color: var(--ink-faint); background: var(--sunken); }
+  tr:last-child td { border-bottom: 0; }
+  td.game { font-weight: 700; white-space: nowrap; }
+  .num { font-family: var(--data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .footer { border-top: 1px solid var(--line); padding-top: 16px; color: var(--ink-faint);
+            font-size: 13.5px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="page">
+
+  <header>
+    <p class="eyebrow">Hoard &middot; companion to the world one design</p>
+    <h1>How a run adds up</h1>
+  </header>
+
+  <p class="lede">
+    A proposal for what the player gains between chambers and between runs &mdash; built from what
+    the reference games actually do, and checked against the rules we have already locked.
+  </p>
+
+  <div class="note">
+    <span class="note-label">How to read the tags</span>
+    <p>
+      <span class="tag ev">evidenced</span> means a shipped game does this and I can point at it.
+      <span class="tag mine">inference</span> means it follows from our constraints but nobody has
+      proven it for us. <span class="tag cut">guard</span> marks a rule that exists to stop a known
+      failure, not to add anything.
+    </p>
+  </div>
+
+  <h2><span class="n">01</span> The shape in one sentence</h2>
+  <p>
+    <strong>Your roster grows while your ground shrinks.</strong> Every chamber you clear widens what
+    you are allowed to place; every route you take narrows where you are allowed to place it. The run
+    is the collision of those two curves, and it ends when the board gets smaller faster than your
+    options get better.
+  </p>
+  <p>
+    That is the whole pitch. It matters because it is a progression curve only a lane game can have
+    &mdash; ground is the resource being spent, not hit points or a damage multiplier. A generic
+    &ldquo;get stronger each level&rdquo; curve would work in any genre, which is exactly why it
+    would not be memorable here.
+  </p>
+
+  <h2><span class="n">02</span> Three loops, and what survives each one</h2>
+  <div class="loops">
+    <div class="loop">
+      <span class="loop-when">Seconds &middot; inside a chamber</span>
+      <span class="loop-what">Gold becomes goblins</span>
+      <span class="loop-body">Purses off the dead, gold out of the ground, goblins fused on the board.
+        This is the part that is built and plays well.</span>
+      <span class="loop-keep">Survives: nothing. The board is wiped.</span>
+    </div>
+    <div class="loop">
+      <span class="loop-when">Minutes &middot; across a run</span>
+      <span class="loop-what">Roster against hazards</span>
+      <span class="loop-body">Each chamber ends in a route choice that trades a worse board for a
+        better roster. Ten chambers, about twenty minutes.</span>
+      <span class="loop-keep">Survives: what you may place, and the hazards you accepted.</span>
+    </div>
+    <div class="loop">
+      <span class="loop-when">Sessions &middot; across runs</span>
+      <span class="loop-what">The pool widens</span>
+      <span class="loop-body">Feats you perform unlock new goblins, fusions, hazards and heroes into
+        the pool that runs draw from.</span>
+      <span class="loop-keep">Survives: variety. Never power.</span>
+    </div>
+  </div>
+
+  <div class="note good">
+    <span class="note-label">The single most important call here <span class="tag mine">inference</span></span>
+    <p>
+      <strong>The roster carries between chambers. The board does not.</strong> You re-place every
+      goblin, every chamber, from a widening list.
+    </p>
+    <p>
+      This is PvZ's own model &mdash; you replant every level and progression lives in the seed
+      roster &mdash; and it is right for us for a specific reason: <em>placement is the game</em>. If
+      your Ballista Crew persists into the next chamber, chamber one's decisions quietly decide
+      chambers two through ten and you stop making the choice the game is about. Carrying the board
+      also makes fusion a one-time investment instead of something you do every chamber.
+    </p>
+  </div>
+
+  <h2><span class="n">03</span> Between chambers: one screen, one trade</h2>
+  <p>
+    Ten chambers in twenty minutes leaves about two minutes each, so whatever sits between them has
+    to resolve in ten or fifteen seconds. That rules out a rewards screen <em>and</em> a map
+    <em>and</em> a shop. So collapse them: <strong>the route card is the reward.</strong> Picking
+    where you go is picking what you get.
+  </p>
+
+  <div class="routes">
+    <div class="route">
+      <div class="route-top">
+        <span class="route-kind">Route &mdash; down the scree</span>
+        <span class="route-name">The narrow seam</span>
+      </div>
+      <div class="route-row cost"><span class="route-key">Costs</span>
+        <span>The top and bottom lanes cave in. Three lanes for the rest of the run.</span></div>
+      <div class="route-row gain"><span class="route-key">Gains</span>
+        <span>A Powder Keg joins the roster.</span></div>
+    </div>
+    <div class="route">
+      <div class="route-top">
+        <span class="route-kind">Route &mdash; the old workings</span>
+        <span class="route-name">Flooded floor</span>
+      </div>
+      <div class="route-row cost"><span class="route-key">Costs</span>
+        <span>The front two columns are waterlogged. Nothing can be placed there.</span></div>
+      <div class="route-row gain"><span class="route-key">Gains</span>
+        <span>Bear traps reset. One spare.</span></div>
+    </div>
+  </div>
+
+  <p>
+    Both cards name their hazard before you commit, which is already the rule in the design doc. What
+    is new is that the reward is on the same card, so there is exactly one decision and it is a real
+    one: <em>how much board am I willing to sell for this?</em>
+  </p>
+
+  <h3>Node types, kept to four</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Node</th><th>What happens</th><th>Why it exists</th></tr></thead>
+      <tbody>
+        <tr><td class="game">Chamber</td><td>A normal fight. Reward: one new goblin from a choice of three.</td>
+            <td>The default beat. Most nodes are this.</td></tr>
+        <tr><td class="game">Deep chamber</td><td>Harder wave table, and it says so. Reward: a fusion recipe you keep.</td>
+            <td>Slay the Spire's elite. The optional risk that decides good runs.</td></tr>
+        <tr><td class="game">The Pour</td><td>No fight. Cascade your surviving gold; what it lands in you start the next chamber with.</td>
+            <td>Already built as a toy, and it gives gold a reason to be saved rather than dumped.</td></tr>
+        <tr><td class="game">The Reeve</td><td>No fight. He demands something &mdash; a goblin, a lane, half your gold &mdash; and pays for it.</td>
+            <td>Where the story lives, and the only node that can take something away.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note warn">
+    <span class="note-label">Reconciling &ldquo;choose one of three&rdquo; with your no-RNG rule <span class="tag cut">guard</span></span>
+    <p>
+      You have twice thrown out designs where randomness owned a counter, and you were right both
+      times. A choice of three rewards is not that, but it can decay into it. The guard:
+      <strong>the next hazard is named on the route card, and at least one of the three rewards
+      always answers it.</strong> The choice stays real &mdash; take the answer, or gamble that you
+      can already handle it and take the better long-term piece &mdash; but being locked out is
+      structurally impossible.
+    </p>
+  </div>
+
+  <h2><span class="n">04</span> Between runs: feats, not currency</h2>
+  <p>
+    You have already locked this to variety, milestones and no grind currency, which the research
+    supports more strongly than I expected. Into the Breach is the cleanest case: unlocked squads and
+    pilots &ldquo;aren't upgrades, they are more like sidegrades to spice up the game and add
+    variety.&rdquo; Isaac does the same through achievements rather than a shop.
+  </p>
+  <p>
+    So unlocks are triggered by <strong>feats performed in a run</strong>, not by a counter that fills
+    up: fuse a Great Wall; clear a chamber without losing a goblin; win with three lanes sealed; let
+    the Reeve take a goblin. Each adds something to the pool &mdash; a goblin, a fusion result, a
+    hero, a hazard, a route.
+  </p>
+
+  <div class="note warn">
+    <span class="note-label">The failure this is guarding against <span class="tag cut">guard</span></span>
+    <p>
+      The loudest complaint about roguelite meta progression is that games get balanced <em>around</em>
+      it, so early runs are &ldquo;much more difficult / borderline impossible until you unlock enough
+      stuff&rdquo; &mdash; you are playing at a penalty until you have ground it off.
+    </p>
+    <p>
+      <strong>The rule: world one must be winnable with zero unlocks, and it must stay that way.</strong>
+      Every balance pass gets checked against a fresh save. If that ever fails, the unlocks have
+      become power and we cut them back.
+    </p>
+  </div>
+
+  <h3>Unlocks should make the game harder, not easier</h3>
+  <p>
+    The counter-intuitive one, and it is straight from Slay the Spire: a small pool is easy and
+    one-dimensional, and widening it is what creates difficulty and variety. New heroes and hazards
+    entering the pool is progression in exactly the same sense that new goblins are. That framing
+    also solves the &ldquo;does a losing run feel worth it&rdquo; question in the design doc: a run
+    that failed at chamber six but pulled off a feat still moved the game forward.
+  </p>
+
+  <h2><span class="n">05</span> What the reference games actually do</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Game</th><th>The mechanism</th><th>What we take</th></tr></thead>
+      <tbody>
+        <tr><td class="game">Into the Breach</td>
+            <td>Achievements pay coins that unlock squads. Squads and pilots are sidegrades. One pilot carries to the next timeline.</td>
+            <td>The whole meta model, plus: one thread of continuity is enough to make runs feel connected.</td></tr>
+        <tr><td class="game">Hades</td>
+            <td>Mirror of Night spends Darkness on abilities &mdash; and the spend is refundable.</td>
+            <td>Not the currency. The <em>reversibility</em>: experimentation is only free if mistakes are.</td></tr>
+        <tr><td class="game">Hades</td>
+            <td>Pact of Punishment: modular, stackable difficulty conditions the player authors, paying more on the way out.</td>
+            <td>The endgame layer, after &ldquo;won once&rdquo;. Player-authored beats a difficulty slider.</td></tr>
+        <tr><td class="game">Slay the Spire</td>
+            <td>Map of typed nodes; elites guarantee relics; you plan the path backwards from the boss.</td>
+            <td>Node grammar, and the habit of routing toward a known final threat.</td></tr>
+        <tr><td class="game">Slay the Spire</td>
+            <td>Card pool widens slowly across runs, deliberately diluting reliable strategies.</td>
+            <td>Unlocks add difficulty and variety together. Permission to stop treating unlocks as rewards.</td></tr>
+        <tr><td class="game">Binding of Isaac</td>
+            <td>Achievements add items, characters, bosses to the randomiser.</td>
+            <td>Feats as the trigger, and content as the payout.</td></tr>
+        <tr><td class="game">Plants vs. Zombies</td>
+            <td>One new plant at the end of most levels. Levels 1 and 3 simple, 2 and 4 expand, 5 is a bonus.</td>
+            <td>Cadence. One new idea per chamber, and a non-combat beat roughly every fifth.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2><span class="n">06</span> The one carried goblin</h2>
+  <p>
+    Into the Breach lets a single pilot survive a lost timeline. It is the cheapest emotional hook in
+    the genre: one unit with a name and a history, and permadeath that costs you something you can
+    picture. <span class="tag mine">inference</span>
+  </p>
+  <p>
+    Proposal: <strong>when a run ends, one surviving goblin comes with you</strong> &mdash; keeping its
+    name and a tally of the runs it has lived through, but none of its fusions. It starts the next run
+    as a plain goblin who has simply been here before. No power carries; only attachment.
+  </p>
+  <p>
+    This is the piece I would cut first if the meta starts feeling cluttered. It is a flourish, not a
+    system, and it earns its place only if losing that goblin later actually stings.
+  </p>
+
+  <h2><span class="n">07</span> What I would prototype, in order</h2>
+  <ul>
+    <li><strong>The route card.</strong> Two cards, hazard and reward on each, between the chambers
+      that already exist. This is the load-bearing piece and it is a day of work &mdash; everything
+      else in this document is decoration on top of it.</li>
+    <li><strong>Hazards that stack.</strong> Three is enough to test: lanes sealed, columns buried,
+      recharge lengthened. The question is whether a shrinking board stays interesting or just gets
+      annoying, and only playing it answers that.</li>
+    <li><strong>A roster that grows.</strong> Start at three goblins, end the run at six. Watch
+      whether the sixth feels like a gift or like admin.</li>
+    <li><strong>Feats and the unlock pool</strong> &mdash; last. It is the layer that needs the other
+      two working before it can be judged, and the easiest to fake in testing.</li>
+  </ul>
+
+  <div class="note">
+    <span class="note-label">Where this proposal is weakest</span>
+    <p>
+      Two places I am not confident. First, <strong>ten chambers may be too many</strong> &mdash; if
+      the roster tops out at chamber six, the last four are a victory lap, and the design doc already
+      flags run length as untested. Six chambers with denser choices may be the better run.
+    </p>
+    <p>
+      Second, <strong>I have assumed hazards are interesting</strong>. A board that only ever gets
+      worse is a slow squeeze, and slow squeezes can read as punishment rather than tension. If
+      playtests say so, the fix is to let some routes <em>give</em> ground back &mdash; a collapsed
+      lane reopened, a column cleared &mdash; so the board breathes instead of only closing.
+    </p>
+  </div>
+
+  <div class="footer">
+    Sources: Into the Breach and Hades progression analyses, Slay the Spire map and card-pool design
+    notes, Binding of Isaac unlock structure, and the Plants vs. Zombies Adventure Mode level
+    breakdown. Nothing here is built yet &mdash; it is a proposal to argue with.
+  </div>
+
+</div>
+
+<script>
+  // The host owns <head>, so claim the viewport at runtime — without it a phone
+  // lays this out at 980px and scales it down to something unreadable.
+  (function () {
+    let m = document.querySelector('meta[name="viewport"]');
+    if (!m) { m = document.createElement("meta"); m.name = "viewport"; document.head.appendChild(m); }
+    m.content = "width=device-width, initial-scale=1";
+  })();
+</script>
