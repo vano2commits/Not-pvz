@@ -286,6 +286,13 @@
   const pick = a => a[(Math.random() * a.length) | 0];
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const ease = t => t * t * (3 - 2 * t);
+  // Blend toward a flash colour instead of blinking the whole body on and off.
+  const mixHex = (a, b, t) => {
+    if (t <= 0) return a;
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const m = (sh) => Math.round((((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t));
+    return "rgb(" + m(16) + "," + m(8) + "," + m(0) + ")";
+  };
 
   // Recharge per card, as the original gives every seed packet its own. Without it
   // you simply spam the cheapest thing the moment you can afford it.
@@ -339,6 +346,10 @@
   // more ground than a cleared wave has paid for.
   const LANE_ORDER = [2, 1, 3, 0, 4];
   const lanesOpen = ix => ix < 3 ? 3 : ix < 4 ? 4 : 5;
+  // Ground being open is not the same as it being used. Wave 1 comes down a single lane
+  // however many are open, because 250 gold buys two Chuckers and no more — three lanes
+  // at once is a trap you pay a bear trap for through no fault of your own.
+  const laneBudget = ix => ix === 0 ? 1 : ix === 1 ? 2 : 99;
   const laneIsOpen = r => LANE_ORDER.indexOf(r) < lanesOpen(Math.max(S.waveIx, 0));
 
   // Purses are the whole early economy — there is no sun falling from the sky here, so
@@ -373,6 +384,7 @@
       traps: new Array(ROWS).fill(true),
       cool: { chucker: 0, digger: 0, barricade: 0, bow: 0, ballista: 0 },
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
+      waveLanes: [],
       // 0 = still caved in, 1 = open ground. Closed lanes are rubble you cannot build on.
       laneReveal: new Array(ROWS).fill(0).map((_, r) => LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
       selUnit: null, selGob: null,
@@ -436,6 +448,7 @@
     let t = 0;
     const gap = Math.max(0.5, 1.6 - S.waveIx * 0.17);
     S.queue = w.list.map(type => { t += rnd(gap * 0.65, gap * 1.5); return { type, at: t }; });
+    S.waveLanes = [];
     for (let r = 0; r < ROWS; r++) { S.laneLoad[r] *= 0.7; if (S.laneQuiet[r] > 0) S.laneQuiet[r]--; }
     S.phase = "fight"; S.phaseT = 0;
     S.bannerText = "WAVE " + (S.waveIx + 1) + " — " + w.name.toUpperCase();
@@ -445,12 +458,17 @@
 
   function chooseLane() {
     const open = LANE_ORDER.slice(0, lanesOpen(S.waveIx));
-    if (S.spawnCount < 2) return pick(open);
-    const w = open.map(r => S.laneQuiet[r] > 0 ? 1e-6 : 1 / (1 + S.laneLoad[r]));
+    const cap = Math.min(laneBudget(S.waveIx), open.length);
+    // Once a wave has spent its lane allowance it keeps coming down the lanes it already
+    // opened with, rather than picking a fresh one you have nothing standing in.
+    const pool = S.waveLanes.length >= cap ? S.waveLanes : open;
+    const take = r => { if (!S.waveLanes.includes(r)) S.waveLanes.push(r); return r; };
+    if (S.spawnCount < 2 && pool === open) return take(pick(pool));
+    const w = pool.map(r => S.laneQuiet[r] > 0 ? 1e-6 : 1 / (1 + S.laneLoad[r]));
     const tot = w.reduce((a, b) => a + b, 0);
     let x = Math.random() * tot;
-    for (let i = 0; i < open.length; i++) { x -= w[i]; if (x <= 0) return open[i]; }
-    return open[open.length - 1];
+    for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) return take(pool[i]); }
+    return take(pool[pool.length - 1]);
   }
 
   function spawnFoe(type, lane) {
@@ -691,17 +709,87 @@
   const cv = document.getElementById("board");
   const cx = cv.getContext("2d");
 
+  // A crew, not a stack of the same sprite. Each goblin in a body gets its own spot,
+  // its own size and a dark rim so the silhouettes separate; a Barricade is planking
+  // bolted on the hero-facing side rather than another green blob.
+  const FORMATION = {
+    1: [[0, 0, 1]],
+    2: [[-27, -13, 0.84], [13, 5, 1]],
+    3: [[-32, -19, 0.72], [-5, -8, 0.85], [21, 6, 1]],
+  };
+  // Two goblins in one cell have to fit in one cell, so the group shrinks as it grows.
+  const GROUP = { 1: 1, 2: 0.85, 3: 0.74 };
+  const RIM = "#191320";
+
+  function goblinFace(sc, tint, look, blink) {
+    cx.save(); cx.scale(sc, sc);
+    const rw = 26, rh = 28;
+    cx.lineJoin = "round";
+    cx.strokeStyle = RIM; cx.lineWidth = 5 / sc;
+    cx.fillStyle = tint;
+    // ears, then head, stroked together so the rim wraps the whole silhouette
+    cx.beginPath(); cx.moveTo(-rw + 3, -6); cx.lineTo(-rw - 15, -20); cx.lineTo(-rw - 2, 4); cx.closePath();
+    cx.stroke(); cx.fill();
+    cx.beginPath(); cx.moveTo(rw - 3, -6); cx.lineTo(rw + 15, -20); cx.lineTo(rw + 2, 4); cx.closePath();
+    cx.stroke(); cx.fill();
+    cx.beginPath(); cx.ellipse(0, 0, rw, rh, 0, 0, 6.284); cx.stroke(); cx.fill();
+    cx.fillStyle = "rgba(0,0,0,.22)";
+    cx.beginPath(); cx.ellipse(0, rh * 0.45, rw * 0.92, rh * 0.4, 0, 0, 6.284); cx.fill();
+    const ey = -rh * 0.22;
+    if (blink) {
+      cx.strokeStyle = "#14110f"; cx.lineWidth = 2.4;
+      cx.beginPath(); cx.moveTo(-15, ey); cx.lineTo(-3, ey); cx.moveTo(3, ey); cx.lineTo(15, ey); cx.stroke();
+    } else {
+      cx.fillStyle = "#fdfbf4";
+      cx.beginPath(); cx.ellipse(-9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
+      cx.beginPath(); cx.ellipse(9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
+      cx.fillStyle = "#14110f";
+      cx.beginPath(); cx.arc(-9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
+      cx.beginPath(); cx.arc(9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
+    }
+    cx.strokeStyle = "#14110f"; cx.lineWidth = 2; cx.lineCap = "round";
+    cx.beginPath(); cx.arc(0, rh * 0.12, 9, 0.25, Math.PI - 0.25); cx.stroke();
+    cx.fillStyle = "#fdfbf4";
+    cx.fillRect(-5, rh * 0.12 + 5, 3.5, 4);
+    cx.fillRect(2, rh * 0.12 + 5, 3.5, 4);
+    cx.restore();
+  }
+
+  // Planking, one board per Barricade part, stood on the side the heroes come from.
+  function drawPlanks(n, x0, hurt) {
+    cx.save();
+    const h = 30 + n * 8;
+    cx.strokeStyle = RIM; cx.lineWidth = 4;
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * 9;
+      cx.fillStyle = i % 2 ? mixHex("#6b4e2c", "#fff3cf", hurt * 0.8)
+                           : mixHex("#8a6234", "#fff3cf", hurt * 0.8);
+      cx.beginPath(); cx.rect(x, -h / 2, 8, h); cx.stroke(); cx.fill();
+    }
+    cx.strokeStyle = "#3f2f1c"; cx.lineWidth = 2.6;
+    cx.beginPath(); cx.moveTo(x0 - 2, -h * 0.22); cx.lineTo(x0 + n * 9, -h * 0.22); cx.stroke();
+    cx.beginPath(); cx.moveTo(x0 - 2, h * 0.22); cx.lineTo(x0 + n * 9, h * 0.22); cx.stroke();
+    cx.restore();
+  }
+
   function drawGoblin(g) {
     const p = cellOf(g);
     const cxp = p.x + CELL / 2, cyp = p.y + CELL * 0.58;
-    const grow = (1 + (g.parts.length - 1) * 0.14) * K;
-    const big = countOf(g, "barricade") > 0;
-    const tint = tintOf(g);
     const sq = g.squash > 0 ? ease(clamp(g.squash, 0, 1)) : 0;
     const landing = g.land > 0 ? ease(clamp(g.land, 0, 1)) : 0;
-    const sx = (1 + sq * 0.24 + landing * 0.3) * grow;
-    const sy = (1 - sq * 0.18 - landing * 0.24) * grow;
+    const sx = (1 + sq * 0.24 + landing * 0.3) * K;
+    const sy = (1 - sq * 0.18 - landing * 0.24) * K;
     const lean = (g.recoil > 0 ? -g.recoil * 13 : 0) + (g.wind ? g.wind * 7 : 0);
+
+    // A steady ramp, not a strobe. The old version toggled on sin(t*60) — about ten
+    // flips a second, aliasing against the frame rate into a flicker.
+    const hurt = clamp(g.hurtT * 2.6, 0, 1);
+
+    const bars = countOf(g, "barricade");
+    const crew = g.parts.filter(t => t !== "barricade");
+    const cn = countOf(g, "chucker");
+    const bodies = crew.length || 1;      // an all-Barricade body still shows one goblin
+    const form = FORMATION[bodies];
 
     if (S.selGob === g) {
       cx.strokeStyle = "rgba(232,192,90," + (0.55 + Math.sin(S.t * 7) * 0.3) + ")";
@@ -711,73 +799,67 @@
     }
 
     cx.fillStyle = "rgba(0,0,0,.34)";
-    cx.beginPath(); cx.ellipse(cxp, cyp + (big ? 34 : 28) * grow, 24 * sx, 6 * grow, 0, 0, 6.284); cx.fill();
-
-    // extra crew stand behind, so a rank reads as more goblins rather than a bigger one
-    const crew = g.parts.length - 1;
-    for (let i = crew; i >= 1; i--) {
-      cx.save();
-      cx.translate(cxp - 13 * i * K, cyp - 5 * i * K);
-      cx.scale(sx * 0.82, sy * 0.82);
-      cx.globalAlpha = 0.85;
-      cx.fillStyle = "#4f8a45";
-      cx.beginPath(); cx.ellipse(0, 0, 24, 26, 0, 0, 6.284); cx.fill();
-      cx.beginPath(); cx.moveTo(-21, -6); cx.lineTo(-36, -20); cx.lineTo(-23, 4); cx.closePath(); cx.fill();
-      cx.fillStyle = "#fdfbf4";
-      cx.beginPath(); cx.ellipse(-6, -7, 5.4, 6, 0, 0, 6.284); cx.fill();
-      cx.beginPath(); cx.ellipse(6, -7, 5.4, 6, 0, 0, 6.284); cx.fill();
-      cx.fillStyle = "#14110f";
-      cx.beginPath(); cx.arc(-5, -6, 2.4, 0, 6.284); cx.fill();
-      cx.beginPath(); cx.arc(7, -6, 2.4, 0, 6.284); cx.fill();
-      cx.restore();
-    }
-    cx.globalAlpha = 1;
+    cx.beginPath();
+    cx.ellipse(cxp, cyp + 30 * K, (24 + bodies * 5) * sx, 6 * K, 0, 0, 6.284);
+    cx.fill();
 
     cx.save();
     cx.translate(cxp + lean, cyp);
     cx.scale(sx, sy);
-    if (g.hurtT > 0 && Math.sin(S.t * 60) > 0) cx.globalAlpha = 0.55;
 
-    const rw = big ? 34 : 26, rh = big ? 36 : 28;
-    cx.fillStyle = tint;
-    cx.beginPath(); cx.moveTo(-rw + 3, -6); cx.lineTo(-rw - 15, -20); cx.lineTo(-rw - 2, 4); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(rw - 3, -6); cx.lineTo(rw + 15, -20); cx.lineTo(rw + 2, 4); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.ellipse(0, 0, rw, rh, 0, 0, 6.284); cx.fill();
-    cx.fillStyle = "rgba(0,0,0,.22)";
-    cx.beginPath(); cx.ellipse(0, rh * 0.45, rw * 0.92, rh * 0.4, 0, 0, 6.284); cx.fill();
-    const ey = -rh * 0.22;
-    cx.fillStyle = "#fdfbf4";
-    cx.beginPath(); cx.ellipse(-9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
-    cx.beginPath(); cx.ellipse(9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
-    cx.fillStyle = "#14110f";
-    const look = countOf(g, "digger") > 0 ? -2 : 2;
-    cx.beginPath(); cx.arc(-9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
-    cx.beginPath(); cx.arc(9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
-    cx.strokeStyle = "#14110f"; cx.lineWidth = 2; cx.lineCap = "round";
-    cx.beginPath(); cx.arc(0, rh * 0.12, 9, 0.25, Math.PI - 0.25); cx.stroke();
-    cx.fillStyle = "#fdfbf4";
-    cx.fillRect(-5, rh * 0.12 + 5, 3.5, 4);
-    cx.fillRect(2, rh * 0.12 + 5, 3.5, 4);
-
-    // the weapon, which is the whole point of a rank
-    const cnn = countOf(g, "chucker");
-    if (cnn === 2) {
-      cx.strokeStyle = "#8a6234"; cx.lineWidth = 4; cx.lineCap = "round";
-      cx.beginPath(); cx.arc(20, 0, 24, -1.15, 1.15); cx.stroke();
-      cx.strokeStyle = "#d9cdb4"; cx.lineWidth = 1.4;
-      cx.beginPath(); cx.moveTo(30, -22); cx.lineTo(30, 22); cx.stroke();
-    } else if (cnn === 3) {
-      cx.fillStyle = "#6b4e2c";
-      cx.fillRect(6, -8, 40, 9);
-      cx.fillStyle = "#9c7643";
-      cx.fillRect(2, -16, 10, 26);
-      cx.strokeStyle = "#8a6234"; cx.lineWidth = 5; cx.lineCap = "round";
-      cx.beginPath(); cx.moveTo(30, -26); cx.lineTo(30, 26); cx.stroke();
-      cx.strokeStyle = "#d9cdb4"; cx.lineWidth = 1.6;
-      cx.beginPath(); cx.moveTo(30, -24); cx.lineTo(8, 0); cx.lineTo(30, 24); cx.stroke();
+    const gs = GROUP[bodies];
+    cx.save();
+    cx.translate(-bars * 7, 0);
+    cx.scale(gs, gs);
+    // back of the crew first, so the front goblin overlaps the ones behind it
+    for (let i = 0; i < bodies; i++) {
+      const [dx, dy, fsc] = form[i];
+      const type = crew[i] || "barricade";
+      const base = type === "digger" ? "#c9d45f" : "#6fbf5b";
+      const tint = mixHex(base, "#fff3cf", hurt * 0.85);
+      cx.save();
+      cx.translate(dx, dy);
+      // a goblin two ranks back is further away, not just smaller
+      cx.globalAlpha = i < bodies - 1 ? 0.93 : 1;
+      goblinFace(fsc, tint, type === "digger" ? -2 : 2, false);
+      if (type === "digger") {
+        cx.save(); cx.scale(fsc, fsc);
+        cx.strokeStyle = RIM; cx.lineWidth = 5; cx.lineCap = "round";
+        cx.beginPath(); cx.moveTo(-20, 16); cx.lineTo(-34, 30); cx.stroke();
+        cx.strokeStyle = "#9c7643"; cx.lineWidth = 3; cx.stroke();
+        cx.strokeStyle = RIM; cx.lineWidth = 6;
+        cx.beginPath(); cx.moveTo(-40, 22); cx.lineTo(-28, 34); cx.stroke();
+        cx.strokeStyle = "#b9c0cc"; cx.lineWidth = 3.4; cx.stroke();
+        cx.restore();
+      }
+      cx.restore();
     }
+    cx.globalAlpha = 1;
     cx.restore();
 
+    // planking clears whatever the crew occupies, so it never lands on a face
+    if (bars) drawPlanks(bars, 26 + (bodies - 1) * 6 - bars * 7, hurt);
+
+    // The shared weapon sits in front of the whole crew — it is what they are for.
+    if (cn === 2) {
+      cx.strokeStyle = RIM; cx.lineWidth = 7; cx.lineCap = "round";
+      cx.beginPath(); cx.arc(24, 2, 26, -1.15, 1.15); cx.stroke();
+      cx.strokeStyle = "#8a6234"; cx.lineWidth = 4.5; cx.stroke();
+      cx.strokeStyle = "#d9cdb4"; cx.lineWidth = 1.6;
+      cx.beginPath(); cx.moveTo(35, -22); cx.lineTo(35, 26); cx.stroke();
+    } else if (cn === 3) {
+      cx.lineJoin = "round"; cx.strokeStyle = RIM; cx.lineWidth = 5;
+      cx.fillStyle = "#6b4e2c";
+      cx.beginPath(); cx.rect(4, -9, 44, 11); cx.stroke(); cx.fill();
+      cx.fillStyle = "#9c7643";
+      cx.beginPath(); cx.rect(0, -19, 12, 30); cx.stroke(); cx.fill();
+      cx.strokeStyle = RIM; cx.lineWidth = 8; cx.lineCap = "round";
+      cx.beginPath(); cx.moveTo(34, -28); cx.lineTo(34, 28); cx.stroke();
+      cx.strokeStyle = "#8a6234"; cx.lineWidth = 5; cx.stroke();
+      cx.strokeStyle = "#d9cdb4"; cx.lineWidth = 1.8;
+      cx.beginPath(); cx.moveTo(34, -26); cx.lineTo(10, -4); cx.lineTo(34, 26); cx.stroke();
+    }
+    cx.restore();
 
     const mx = maxHpOf(g);
     if (g.hp < mx) {
