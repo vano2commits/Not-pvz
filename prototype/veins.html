@@ -989,6 +989,28 @@
       cx.beginPath(); cx.moveTo(OX, OY + r * CELL); cx.lineTo(OX + COLS * CELL, OY + r * CELL); cx.stroke();
     }
 
+    // The moment a card is picked up, every goblin that has room to take it is ringed.
+    // Nobody drops a goblin onto a goblin unless the board tells them they can, and a
+    // tutorial line would only reach the players who read it.
+    if (S.selUnit && !S.over && S.coins >= UNITS[S.selUnit].cost && S.cool[S.selUnit] <= 0) {
+      const pulse = 0.5 + Math.sin(S.t * 4.4) * 0.5;
+      for (const g of S.goblins) {
+        if (g.parts.length >= MAX_PARTS) continue;
+        const gp = cellOf(g), gx = gp.x + CELL / 2, gy = gp.y + CELL / 2;
+        cx.strokeStyle = "rgba(232,192,90," + (0.3 + pulse * 0.45) + ")";
+        cx.lineWidth = 2 + pulse * 1.4;
+        cx.beginPath(); cx.arc(gx, gy, CELL * 0.42 - pulse * 3, 0, 6.284); cx.stroke();
+        // a plus sign, because that is the verb
+        cx.lineWidth = 3; cx.lineCap = "round";
+        cx.strokeStyle = "rgba(255,243,207," + (0.45 + pulse * 0.5) + ")";
+        const s2 = 7 + pulse * 1.5, py2 = gp.y + 13;
+        cx.beginPath();
+        cx.moveTo(gx - s2, py2); cx.lineTo(gx + s2, py2);
+        cx.moveTo(gx, py2 - s2); cx.lineTo(gx, py2 + s2);
+        cx.stroke();
+      }
+    }
+
     if (S.selUnit && hover.col >= 0 && !S.over) {
       const u = UNITS[S.selUnit];
       // An occupied cell is a legal target now — that is where fusions come from — so it
@@ -1001,6 +1023,18 @@
       cx.strokeStyle = ok ? "rgba(111,191,91,.75)" : "rgba(209,85,63,.75)";
       cx.lineWidth = 2;
       cx.strokeRect(OX + hover.col * CELL + 2, OY + hover.row * CELL + 2, CELL - 4, CELL - 4);
+      // Hovering a goblin you can fuse names the creature you would get, so the trade is
+      // legible before you pay for it.
+      if (ok && on) {
+        const would = nameOf({ parts: on.parts.concat(S.selUnit) }).toUpperCase();
+        const tx = OX + hover.col * CELL + CELL / 2, ty = OY + hover.row * CELL - 5;
+        cx.font = "bold 11px " + FONT; cx.textAlign = "center";
+        const tw = cx.measureText(would).width + 10;
+        cx.fillStyle = "rgba(11,9,16,.82)";
+        cx.fillRect(tx - tw / 2, ty - 11, tw, 14);
+        cx.fillStyle = "#f5dc9c";
+        cx.fillText(would, tx, ty);
+      }
       if (S.selUnit === "digger") {
         // worth shown as coins, not digits
         const pips = Math.max(1, Math.round(yieldAt(hover.col) / RICH_MAX * 5));
