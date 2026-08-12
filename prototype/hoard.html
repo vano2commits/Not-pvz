@@ -214,17 +214,10 @@
     <button class="btn" id="restart" type="button">New chamber</button>
     <button class="btn" id="pause" type="button">Pause</button>
     <button class="btn on" id="mute" type="button">Sound on</button>
-    <span class="hint">Drop a goblin onto a goblin to fuse them. Three to a body.</span>
+
   </div>
 
-  <p class="foot">
-    Three goblins for sale and nothing else. Everything past that is <b>fused</b>: drop one onto
-    another and you get a new creature with both their jobs, up to three to a body. Two Chuckers share
-    a bow too big for either of them; three crew a ballista; a Barricade dropped on anything armours
-    it. Economy is <b>positional</b> &mdash; the rock is visibly richer toward the far end and a Digger
-    takes what is under it, so its worth is decided by how far forward you dare stand it, and its shaft
-    deepens the longer it survives. <b>Nothing needs collecting.</b>
-  </p>
+
 </div>
 
 <script>
@@ -334,7 +327,7 @@
   const OX = 96, OY = 52;
   const K = CELL / 96;              // art was drawn for a 96px cell
 
-  const START_COINS = 250;
+  const START_COINS = 320;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[(Math.random() * a.length) | 0];
@@ -354,7 +347,7 @@
   // one on top of another — the way PvZ Fusion drops a plant onto a plant and gets a
   // new species, rather than a dedicated upgrade card you carry in.
   const UNITS = {
-    chucker:  { name: "Chucker",   cost: 100, hp: 120, tint: "#6fbf5b", recharge: 6 },
+    chucker:  { name: "Chucker",   cost: 70,  hp: 120, tint: "#6fbf5b", recharge: 6 },
     digger:   { name: "Digger",    cost: 50,  hp: 95,  tint: "#c9d45f", recharge: 6 },
     barricade:{ name: "Barricade", cost: 50,  hp: 520, tint: "#3f8a4a", recharge: 14 },
     // Unlocked answers. Sidegrades: each is plainly better against one world rule and
@@ -363,7 +356,7 @@
                 answers: "scree" },
     tollkeep: { name: "Tollkeeper",cost: 75,  hp: 110, tint: "#d8b45a", recharge: 9,
                 answers: "rot" },
-    lantern:  { name: "Lanternbearer", cost: 75, hp: 130, tint: "#e8d98a", recharge: 9,
+    keg:      { name: "Powder Keg", cost: 75,  hp: 60,  tint: "#d1553f", recharge: 12,
                 answers: "deep" },
     // Answers nothing in particular. Useful everywhere, best nowhere — which is what
     // the feat track should hand out once the answers are guaranteed.
@@ -411,7 +404,7 @@
   // The original opens 1-1 on a single lane and adds lanes as the world goes on. We do
   // the same inside one level, centre-out, so an early wave can never ask you to cover
   // more ground than a cleared wave has paid for.
-  const RUBBLE_LIFE = 22;          // seconds before a rockfall settles on its own
+  const RUBBLE_LIFE = 14;          // seconds before a rockfall settles on its own
   const LANE_ORDER = [2, 1, 3, 0, 4];
   const lanesOpen = ix => ix < 3 ? 3 : ix < 4 ? 4 : 5;
   // Ground being open is not the same as it being used. Wave 1 comes down a single lane
@@ -427,6 +420,9 @@
     squire:   { name: "Squire",   hp: 150, speed: 22, dps: 22, purse: 14, pts: 1 },
     scout:    { name: "Scout",    hp: 150, speed: 42, dps: 16, purse: 13, pts: 2 },
     sergeant: { name: "Sergeant", hp: 520, speed: 18, dps: 30, purse: 30, pts: 2 },
+    // Chapter 2 onward. Hops the first goblin it meets, so a wall on its own stops being
+    // an answer and where you stand things matters again.
+    leaper:   { name: "Leaper",   hp: 190, speed: 34, dps: 24, purse: 24, pts: 2, leaps: true },
   };
 
   // Each world breaks one thing you lean on and names the goblin that answers it —
@@ -438,12 +434,12 @@
     rot:   { name: "The Rot", tier: 2, answer: "tollkeep",
              rule: "Dead ground. Diggers pull a quarter of what they should.",
              fix: "A Tollkeeper earns off kills instead." },
-    deep:  { name: "The Deep", tier: 3, answer: "lantern",
-             rule: "No light. Heroes are invisible until they are halfway down the lane.",
-             fix: "A Lanternbearer lights the lane it stands in." },
+    deep:  { name: "The Deep", tier: 3, answer: "keg",
+             rule: "No bear traps. Nothing catches what gets past you.",
+             fix: "A Powder Keg is a trap you place yourself." },
   };
 
-  const S_ = "squire", C_ = "scout", G_ = "sergeant";
+  const S_ = "squire", C_ = "scout", G_ = "sergeant", L_ = "leaper";
   const WAVES = [
     // One new thing per wave, the way 1-2 adds a Conehead rather than a tougher Basic.
     // Waves 1-3 are squires on three lanes: enough to learn the lane and bank a purse.
@@ -465,7 +461,7 @@
     S = {
       coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 2.6,
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
-      traps: new Array(ROWS).fill(true),
+      traps: new Array(ROWS).fill(CFG.world !== "deep"),
       cool: Object.fromEntries(Object.keys(UNITS).map(k => [k, 0])),
       buried: {}, buryT: 14,
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
@@ -541,7 +537,13 @@
     const w = CHAMBER_WAVES[S.waveIx];
     let t = 0;
     const gap = Math.max(0.5, 1.6 - S.waveIx * 0.17);
-    S.queue = w.list.map(type => { t += rnd(gap * 0.65, gap * 1.5); return { type, at: t }; });
+    S.queue = w.list.map(type => {
+      t += rnd(gap * 0.65, gap * 1.5);
+      // deeper chapters send leapers in place of scouts — a different problem, not a
+      // bigger one, which is the whole point of going down
+      const swap = CFG.chapter >= 2 && type === C_ && Math.random() < 0.55 ? L_ : type;
+      return { type: swap, at: t };
+    });
     S.waveLanes = [];
     for (let r = 0; r < ROWS; r++) { S.laneLoad[r] *= 0.7; if (S.laneQuiet[r] > 0) S.laneQuiet[r]--; }
     S.phase = "fight"; S.phaseT = 0;
@@ -625,8 +627,8 @@
       }
       S.buryT -= dt;
       // never more than a few at once, or the board quietly disappears
-      if (S.buryT <= 0 && Object.keys(S.buried).length < 4) {
-        S.buryT = 11;
+      if (S.buryT <= 0 && Object.keys(S.buried).length < 3) {
+        S.buryT = 16;
         const free = [];
         for (let c = 1; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
           if (!laneIsOpen(r) || S.buried[c + "," + r] || gobAt(c, r)) continue;
@@ -651,12 +653,17 @@
         const e = S.queue.shift();
         spawnFoe(e.type, chooseLane());
       }
-      if (!S.queue.length && !S.foes.length) {
+      // the next wave comes when this one is mostly broken, the way the original does it,
+      // rather than after the board is clear and a long pause on top
+      const spent = !S.queue.length && S.foes.length &&
+                    S.foes.reduce((a, f) => a + f.hp, 0) <
+                    S.foes.reduce((a, f) => a + f.maxHp, 0) * 0.45;
+      if (!S.queue.length && (!S.foes.length || spent)) {
         S.phase = "breath";
         // PvZ leaves 25-31s between waves. Ours end on a clear board rather than on a
         // health trigger, so the gap is shorter, but it still has to be long enough to
         // spend a purse in — 3s was not.
-        S.phaseT = S.waveIx >= CHAMBER_WAVES.length - 1 ? 0.6 : S.waveIx < 3 ? 9 : 6;
+        S.phaseT = S.waveIx >= CHAMBER_WAVES.length - 1 ? 0.6 : 2.2;
       }
     } else if (S.phase === "breath") { S.phaseT -= dt; if (S.phaseT <= 0) startWave(); }
 
@@ -673,7 +680,9 @@
 
       // How many Chuckers went into it decides the weapon: one arm throws a rock, two
       // share a bow too big for either, three crew a ballista.
-      const cn = countOf(g, "chucker");
+      // A Sapper throws gravel — weaker than a rock, but it is not standing there idle.
+      const cn = countOf(g, "chucker") + (countOf(g, "sapper") > 0 ? 1 : 0)
+                                       + (countOf(g, "hollerer") > 0 ? 1 : 0);
       if (cn > 0) {
         const target = S.foes.find(f => f.lane === g.row && f.hp > 0 && f.x > p.x - 10);
         g.wind = target && g.cd < 0.32 ? clamp(1 - g.cd / 0.32, 0, 1) : 0;
@@ -690,6 +699,23 @@
           burst(p.x + CELL * 0.64, p.y + CELL * 0.46, 3,
                 { colors: ["#cbbfa8"], spread: 70, size: [1.2, 2.2], dir: 0, cone: 1.1,
                   gravity: 260, life: [0.12, 0.25] });
+        }
+      }
+
+      // A Powder Keg waits for something to reach it and takes the lane with it.
+      if (countOf(g, "keg") > 0) {
+        const near = S.foes.find(f => f.lane === g.row && f.hp > 0 &&
+                                      f.x < p.x + CELL * 1.15 && f.x > p.x - CELL);
+        if (near) {
+          const bx = p.x + CELL / 2, by = p.y + CELL * 0.5;
+          for (const f of S.foes) if (f.lane === g.row && f.hp > 0 && f.x > p.x - CELL * 0.5)
+            f.hp -= 260 * countOf(g, "keg");
+          g.hp = 0;
+          ring(bx, by, 210, "rgba(232,192,90,.85)", 6, 0.45);
+          ring(bx, by, 120, "rgba(209,85,63,.9)", 4, 0.3);
+          burst(bx, by, 34, { colors: ["#e8c05a", "#fff3cf", "#d1553f", "#8a7134"], spread: 420 });
+          popText(bx, p.y, "BOOM", "#e8c05a");
+          kick(13); stop(0.09); flash(0.3); Sound.play("trap");
         }
       }
 
@@ -770,7 +796,12 @@
       const d = FOES[f.type];
       const prev = f.x;
       // A Hollerer's lane crawls, because everyone in it stops to argue.
-      const jeer = S.goblins.some(g => g.row === f.lane && countOf(g, "hollerer") > 0) ? 0.6 : 1;
+      const jeering = S.goblins.some(g => g.row === f.lane && countOf(g, "hollerer") > 0);
+      const jeer = jeering ? 0.5 : 1;
+      if (jeering && Math.random() < dt * 2.2)
+        burst(f.x, laneY(f.lane) + CELL * 0.3, 2,
+              { colors: ["#9a7fc4", "#c9b6e8"], spread: 60, size: [1.4, 2.6],
+                dir: -1.57, cone: 1.2, gravity: -40, life: [0.3, 0.6] });
       f.bob += dt * (f.type === "scout" ? 11 : 7);
       if (f.hitT > 0) f.hitT -= dt;
       if (f.squash > 0) f.squash -= dt * 4;
@@ -782,6 +813,25 @@
 
       const col = Math.floor((f.x - OX) / CELL);
       const wall = col >= 0 && col < COLS ? gobAt(col, f.lane) : null;
+
+      // A Leaper vaults the first thing in its way, once, and lands clear of it.
+      if (wall && FOES[f.type].leaps && !f.leapt) {
+        f.leapt = true; f.vault = 0; f.vaultFrom = f.x;
+        f.vaultTo = OX + col * CELL - 24;
+        Sound.play("throw");
+      }
+      if (f.vault !== undefined && f.vault < 1) {
+        f.vault = Math.min(1, f.vault + dt * 1.6);
+        f.x = f.vaultFrom + (f.vaultTo - f.vaultFrom) * f.vault;
+        if (f.vault >= 1) {
+          f.vault = undefined;
+          burst(f.x, laneY(f.lane) + CELL * 0.82, 8,
+                { colors: ["#3b3340", "#8d8496"], spread: 150, size: [1.4, 3] });
+          kick(2);
+        }
+        continue;
+      }
+
       if (wall) {
         wall.hp -= d.dps * dt; wall.hurtT = 0.13;
         if (Math.random() < dt * 5)
@@ -824,11 +874,22 @@
       burst(f.x, y, f.byTrap ? 8 : 14,
             { colors: ["#c9ced8", "#8b93a2", "#5a5560"], spread: 280, size: [1.6, 4], life: [0.3, 0.7] });
       if (!f.byTrap) { kick(1.6); Sound.play("kill"); }
-      let purse = FOES[f.type].purse;
+      // The Rot does not make you poorer, it changes where money comes from.
+      let purse = Math.round(FOES[f.type].purse * (CFG.world === "rot" ? 2.6 : 1));
       // A Tollkeeper standing in the lane takes its cut off the body.
       const toll = S.goblins.filter(g => g.row === f.lane && countOf(g, "tollkeep") > 0)
                             .reduce((a, g) => a + countOf(g, "tollkeep"), 0);
-      if (toll) purse = Math.round(purse * (1 + 1.1 * toll));
+      if (toll) {
+        purse = Math.round(purse * (1 + 1.6 * toll));
+        // and it has to be visible, or nobody believes it is working
+        for (const g of S.goblins) {
+          if (g.row !== f.lane || countOf(g, "tollkeep") === 0) continue;
+          const gp = cellOf(g);
+          popText(gp.x + CELL / 2, gp.y + 6, "TOLL", "#e8c05a");
+          ring(gp.x + CELL / 2, gp.y + CELL / 2, 44, "rgba(232,192,90,.7)", 3, 0.3);
+          g.squash = 1;
+        }
+      }
       spill(f.x, y, purse);      // heroes still pay a little, immediately
     }
     S.foes = S.foes.filter(f => f.hp > 0);
@@ -969,7 +1030,7 @@
     for (let i = 0; i < bodies; i++) {
       const [dx, dy, fsc] = form[i];
       const type = crew[i] || "barricade";
-      const base = type === "digger" ? "#c9d45f" : "#6fbf5b";
+      const base = (UNITS[type] && UNITS[type].tint) || "#6fbf5b";
       const tint = mixHex(base, "#fff3cf", hurt * 0.85);
       cx.save();
       cx.translate(dx, dy);
@@ -993,6 +1054,17 @@
 
     // planking clears whatever the crew occupies, so it never lands on a face
     if (bars) drawPlanks(bars, 26 + (bodies - 1) * 6 - bars * 7, hurt);
+
+    // A Hollerer throws sound, so draw the sound.
+    if (countOf(g, "hollerer") > 0) {
+      const pulse = (S.t * 1.6) % 1;
+      cx.strokeStyle = "rgba(154,127,196," + (0.55 * (1 - pulse)) + ")";
+      cx.lineWidth = 3; cx.lineCap = "round";
+      for (let i = 0; i < 3; i++) {
+        const rr = 26 + pulse * 26 + i * 9;
+        cx.beginPath(); cx.arc(6, -4, rr, -0.75, 0.75); cx.stroke();
+      }
+    }
 
     // The shared weapon sits in front of the whole crew — it is what they are for.
     if (cn === 2) {
@@ -1027,30 +1099,20 @@
     }
   }
 
-  // In The Deep you cannot see a hero until it is close, unless somebody in that lane
-  // is carrying a light. This is the whole world rule, and it is entirely visual.
-  function seen(f) {
-    if (CFG.world !== "deep") return 1;
-    if (S.goblins.some(g => g.row === f.lane && countOf(g, "lantern") > 0)) return 1;
-    const edge = OX + COLS * CELL * 0.55;
-    if (f.x <= edge) return 1;
-    return clamp(1 - (f.x - edge) / (CELL * 1.6), 0, 1);
-  }
-
   function drawFoe(f) {
-    const vis = seen(f);
-    if (vis <= 0.02) return;
     const y = laneY(f.lane) + CELL * 0.56;
-    const bob = Math.sin(f.bob) * (f.type === "scout" ? 3 : 2);
-    const tint = f.type === "scout" ? "#8d8496" : f.type === "sergeant" ? "#b98a4e" : "#c9ced8";
-    const scale = (f.type === "scout" ? 0.9 : f.type === "sergeant" ? 1.16 : 1) * K;
+    const hop = f.vault !== undefined ? -Math.sin(f.vault * Math.PI) * 44 : 0;
+    const bob = Math.sin(f.bob) * (f.type === "scout" ? 3 : 2) + hop;
+    const tint = f.type === "scout" ? "#8d8496" : f.type === "sergeant" ? "#b98a4e"
+               : f.type === "leaper" ? "#a9c0d8" : "#c9ced8";
+    const scale = (f.type === "scout" ? 0.9 : f.type === "sergeant" ? 1.16
+                 : f.type === "leaper" ? 0.94 : 1) * K;
     const sq = f.squash > 0 ? ease(clamp(f.squash, 0, 1)) : 0;
 
-    cx.fillStyle = "rgba(0,0,0," + (0.3 * vis) + ")";
+    cx.fillStyle = "rgba(0,0,0,.3)";
     cx.beginPath(); cx.ellipse(f.x, y + 30 * K, 14 * scale, 4 * K, 0, 0, 6.284); cx.fill();
 
     cx.save();
-    cx.globalAlpha = vis;
     cx.translate(f.x, y + bob);
     cx.scale(scale * (1 + sq * 0.22), scale * (1 - sq * 0.2));
     const paint = flat => {
@@ -1103,10 +1165,12 @@
     }
     // Gold seamed through the rock, thickening toward the far end. Nothing says
     // "deeper pays more" — you can see it in the ground before you place anything.
+    const rot = CFG.world === "rot";
     for (let c = 0; c < COLS; c++) {
       const depth = c / (COLS - 1);
-      const warm = 0.012 + depth * 0.055;
-      cx.fillStyle = "rgba(232,192,90," + warm + ")";
+      const warm = (0.012 + depth * 0.055) * (rot ? 0.25 : 1);
+      cx.fillStyle = rot ? "rgba(150,150,160," + warm + ")"
+                         : "rgba(232,192,90," + warm + ")";
       cx.fillRect(OX + c * CELL, OY, CELL, ROWS * CELL);
       const n = Math.round(depth * depth * 9);
       for (let r = 0; r < ROWS; r++) {
@@ -1116,9 +1180,10 @@
           const px = OX + c * CELL + 6 + a * (CELL - 12);
           const py = OY + r * CELL + 6 + b * (CELL - 12);
           const sz = 1 + depth * 2.4;
-          cx.fillStyle = "rgba(201,162,74," + (0.3 + depth * 0.45) + ")";
+          cx.fillStyle = rot ? "rgba(120,116,126," + (0.22 + depth * 0.3) + ")"
+                             : "rgba(201,162,74," + (0.3 + depth * 0.45) + ")";
           cx.beginPath(); cx.ellipse(px, py, sz, sz * 0.72, a * 3, 0, 6.284); cx.fill();
-          if (depth > 0.55) {
+          if (depth > 0.55 && !rot) {
             cx.fillStyle = "rgba(255,244,206,.5)";
             cx.beginPath(); cx.arc(px - sz * 0.3, py - sz * 0.3, sz * 0.34, 0, 6.284); cx.fill();
           }
@@ -1275,18 +1340,6 @@
       }
       cx.stroke();
       cx.globalAlpha = 1;
-    }
-
-    if (CFG.world === "deep") {
-      for (const g of S.goblins) {
-        if (countOf(g, "lantern") === 0) continue;
-        const gp = cellOf(g);
-        const gr = cx.createLinearGradient(gp.x, 0, OX + COLS * CELL, 0);
-        gr.addColorStop(0, "rgba(232,217,138,.16)");
-        gr.addColorStop(1, "rgba(232,217,138,0)");
-        cx.fillStyle = gr;
-        cx.fillRect(gp.x, OY + g.row * CELL, OX + COLS * CELL - gp.x, CELL);
-      }
     }
 
     S.goblins.forEach(drawGoblin);
@@ -1495,13 +1548,13 @@
 
   // ==================================================================== chrome
   const DESC = {
-    chucker:  "Lobs a rock. Drop a second on top and they share a bow; a third crews a ballista.",
-    digger:   "Digs where you stand it. Deeper is richer, and the shaft deepens as it works.",
-    barricade:"Doesn't fight. Won't move. Put one on anything to armour it.",
-    sapper:   "Shovels the rubble out of its lane. Throws a bit, too.",
-    tollkeep: "Takes a cut off every hero that dies in its lane.",
-    lantern:  "Lights its lane. You can see what is coming down it.",
-    hollerer: "Jeers. Heroes in its lane slow down to shout back.",
+    chucker:  "Throws rocks.",
+    digger:   "Mines. Deeper is richer.",
+    barricade:"Soaks hits.",
+    sapper:   "Clears rubble in its lane.",
+    tollkeep: "Extra gold from kills in its lane.",
+    keg:      "Blows up the lane. Once.",
+    hollerer: "Slows its lane.",
   };
   let drag = null;
   function cellUnder(clientX, clientY) {
@@ -1665,7 +1718,7 @@
   window.__hoard = {
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
-    nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, place: tryPlace, seen,
+    nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, place: tryPlace,
     get cfg() { return CFG; },
     // Start a chamber for the meta layer. cfg = { world, chapter, chamber, roles }.
     begin(cfg, done) {
@@ -1709,7 +1762,7 @@
     barricade:{ note: "Doesn't fight. Won't move.", start: true },
     sapper:   { note: "Shovels rubble out of its lane.", meets: "scree" },
     tollkeep: { note: "Takes a cut off every kill in its lane.", meets: "rot" },
-    lantern:  { note: "Lights the lane it stands in.", meets: "deep" },
+    keg:      { note: "Goes off when something reaches it. Takes the lane with it.", meets: "deep" },
     hollerer: { note: "Jeers. Heroes in its lane slow to shout back.",
                 unlock: "Clear chapter 2 of any world" },
   };
@@ -1721,7 +1774,14 @@
   const el = (t, c, x) => { const d = document.createElement(t);
     if (c) d.className = c; if (x != null) d.textContent = x; return d; };
 
-  const SAVE = "hoard.v2";
+  // Everything on the bench is a sidegrade you can already beat the game without.
+  const BENCH = [
+    { role: "hollerer", cost: 6 },
+    { role: "sapper",   cost: 4 },
+    { role: "tollkeep", cost: 4 },
+    { role: "keg",      cost: 4 },
+  ];
+  const SAVE = "hoard.v3";
   let M, R = null;
   const newGob = role => ({ id: Math.random().toString(36).slice(2,8), role,
                             name: rnd(FIRST) + " " + rnd(LAST), runs: 0 });
@@ -1780,11 +1840,7 @@
     R = null;
     const p = el("div", "m-panel");
     p.append(el("h2", null, "The Warren"));
-    const n = el("p", "m-note");
-    n.innerHTML = "Tap a goblin to rename it. <b>Scrip is the unlock track, not a shop</b> — "
-      + "losing it costs you time to new content, never the ability to win. "
-      + "Every world is beatable with the three you started with.";
-    p.append(n);
+
     const c = el("div", "crew");
     for (const g of M.warren) {
       const b = el("button", "gob");
@@ -1792,27 +1848,39 @@
       b.append(el("span", "gob-role", V.UNITS[g.role].name));
       b.append(el("span", "gob-name", g.name));
       b.append(el("span", "gob-note", ROLES[g.role].note));
-      if (g.runs) b.append(el("span", "gob-runs", g.runs + " run" + (g.runs > 1 ? "s" : "")));
-      b.onclick = () => { const v = prompt("Name this goblin", g.name);
-        if (v && v.trim()) { g.name = v.trim().slice(0, 26); save(); warren(); } };
+      if (g.runs) b.append(el("span", "gob-runs", g.runs + "×"));
+      b.disabled = true;
       c.append(b);
     }
     p.append(c);
 
     const panels = [p];
-    const locked = Object.keys(ROLES).filter(k => !M.unlocked.includes(k));
-    if (locked.length) {
+    const buyable = BENCH.filter(x => !M.unlocked.includes(x.role));
+    if (buyable.length) {
       const lp = el("div", "m-panel");
-      lp.append(el("h2", null, "Not here yet"));
+      lp.append(el("h2", null, "The bench"));
       const lc = el("div", "crew");
-      for (const k of locked) {
-        const b = el("button", "gob"); b.disabled = true;
-        b.style.setProperty("--role", V.UNITS[k].tint);
-        b.append(el("span", "gob-role", "???"));
-        b.append(el("span", "gob-name", "— — —"));
-        b.append(el("span", "gob-note", ROLES[k].meets
-          ? "Meets you in " + V.WORLDS[ROLES[k].meets].name
-          : ROLES[k].unlock));
+      for (const x of buyable) {
+        const b = el("button", "gob");
+        b.style.setProperty("--role", V.UNITS[x.role].tint);
+        b.append(el("span", "gob-role", V.UNITS[x.role].name));
+        const price = el("span", "gob-name", x.cost + " scrip");
+        price.style.color = M.scrip >= x.cost ? "var(--gold)" : "var(--ink-dim)";
+        b.append(price);
+        b.append(el("span", "gob-note", ROLES[x.role].note));
+        if (ROLES[x.role].meets) {
+          const free = el("span", "gob-note",
+            "or free in " + V.WORLDS[ROLES[x.role].meets].name);
+          free.style.color = "var(--goblin)";
+          b.append(free);
+        }
+        b.disabled = M.scrip < x.cost;
+        b.onclick = () => {
+          if (M.scrip < x.cost) return;
+          M.scrip -= x.cost; M.unlocked.push(x.role);
+          for (let i = 0; i < 3; i++) M.warren.push(newGob(x.role));
+          save(); warren();
+        };
         lc.append(b);
       }
       lp.append(lc); panels.push(lp);
@@ -1834,11 +1902,7 @@
     const n = el("p", "m-note");
     n.innerHTML = "<b>" + w.rule + "</b> " + w.fix;
     p.append(n);
-    const n2 = el("p", "m-note");
-    n2.innerHTML = "You bring <b>foremen</b>, not soldiers. Down there you place as many of each "
-      + "as you can pay for — the crew comes out of the warren, and the foreman's name goes with "
-      + "all of them. That is how one goblin fills five tiles.";
-    p.append(n2);
+
     const seen = {}, c = el("div", "crew"), count = el("p", "m-note");
     const uniq = M.warren.filter(g => seen[g.role] ? false : (seen[g.role] = 1));
     const redraw = () => {
@@ -1880,11 +1944,7 @@
     R = null;
     const p = el("div", "m-panel");
     p.append(el("h2", null, "Where to"));
-    const n = el("p", "m-note");
-    n.innerHTML = "Each world breaks something you rely on. <b>Somebody who lives there will meet "
-      + "you at the mouth</b> and join the warren for good — you pick your crew after, knowing "
-      + "what you are walking into.";
-    p.append(n);
+
     const ws = el("div", "worlds");
     for (const key in V.WORLDS) {
       const w = V.WORLDS[key];
@@ -1918,14 +1978,9 @@
     const p = el("div", "m-panel");
     p.append(el("h2", null, "Somebody is waiting at the mouth"));
     const n = el("p", "m-note");
-    n.innerHTML = "<b style='color:var(--gold)'>" + name + "</b> lives down here and knows the "
-      + "ground. " + w.fix + " They have joined the warren for good, whether this trip goes "
-      + "well or not.";
+    n.innerHTML = "<b style='color:var(--gold)'>" + name + "</b> &mdash; " + w.fix;
     p.append(n);
-    const n2 = el("p", "m-note");
-    n2.innerHTML = "You do not have to take them. The world is beatable without — it is just "
-      + "harder, the way a roof level is beatable without a pot.";
-    p.append(n2);
+
     const row = el("div", "m-row");
     const b = el("button", "btn on", "Pack for it"); b.onclick = muster;
     row.append(b);
@@ -1994,13 +2049,11 @@
     const p = el("div", "m-panel");
     p.append(el("h2", null, "Chapter " + R.chapter + " cleared"));
     const n = el("p", "m-note");
-    n.innerHTML = "Carrying <b>" + R.scrip + " scrip</b>. Walk out with it, or go one chapter "
-      + "deeper — the heroes down there are tougher and the chambers longer.";
+    n.innerHTML = "Carrying <b>" + R.scrip + "</b>. Deeper chapters send different heroes.";
     p.append(n);
     if (got.length) {
       const u = el("p", "m-note");
-      u.innerHTML = "<b style='color:var(--gold)'>" + got.join(", ")
-        + " joined the warren.</b> Not stronger — better at one particular problem.";
+      u.innerHTML = "<b style='color:var(--gold)'>" + got.join(", ") + " joined the warren.</b>";
       p.append(u);
     }
     const row = el("div", "m-row");
@@ -2034,13 +2087,11 @@
     const p = el("div", "m-panel");
     p.append(el("h2", null, "They took the cart"));
     const n = el("p", "m-note");
-    n.innerHTML = "You were carrying <b>" + R.scrip + "</b>. You come home with <b>" + kept
-      + "</b>. Nobody died — the goblins are back in the warren, and what you already banked "
-      + "is untouched. <b>The next run is no harder than this one.</b>";
+    n.innerHTML = "Carried <b>" + R.scrip + "</b>, kept <b>" + kept + "</b>.";
     p.append(n);
     if (got.length) {
       const u = el("p", "m-note");
-      u.innerHTML = "<b style='color:var(--gold)'>Still counted: " + got.join(", ") + ".</b>";
+      u.innerHTML = "<b style='color:var(--gold)'>" + got.join(", ") + " joined the warren.</b>";
       p.append(u);
     }
     const row = el("div", "m-row");
