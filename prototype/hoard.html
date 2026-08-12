@@ -365,6 +365,9 @@
                 answers: "rot" },
     lantern:  { name: "Lanternbearer", cost: 75, hp: 130, tint: "#e8d98a", recharge: 9,
                 answers: "deep" },
+    // Answers nothing in particular. Useful everywhere, best nowhere — which is what
+    // the feat track should hand out once the answers are guaranteed.
+    hollerer: { name: "Hollerer",  cost: 90,  hp: 140, tint: "#9a7fc4", recharge: 11 },
   };
   // Which of those the player mustered. The rack shows only these.
   let ROSTER = ["chucker", "digger", "barricade"];
@@ -766,6 +769,8 @@
       if (f.hp <= 0) continue;
       const d = FOES[f.type];
       const prev = f.x;
+      // A Hollerer's lane crawls, because everyone in it stops to argue.
+      const jeer = S.goblins.some(g => g.row === f.lane && countOf(g, "hollerer") > 0) ? 0.6 : 1;
       f.bob += dt * (f.type === "scout" ? 11 : 7);
       if (f.hitT > 0) f.hitT -= dt;
       if (f.squash > 0) f.squash -= dt * 4;
@@ -791,7 +796,7 @@
         continue;
       }
 
-      f.x -= f.speed * dt;
+      f.x -= f.speed * jeer * dt;
       f.step += Math.abs(prev - f.x);
       if (f.step > 26) {
         f.step = 0;
@@ -1496,6 +1501,7 @@
     sapper:   "Shovels the rubble out of its lane. Throws a bit, too.",
     tollkeep: "Takes a cut off every hero that dies in its lane.",
     lantern:  "Lights its lane. You can see what is coming down it.",
+    hollerer: "Jeers. Heroes in its lane slow down to shout back.",
   };
   let drag = null;
   function cellUnder(clientX, clientY) {
@@ -1701,9 +1707,11 @@
     chucker:  { note: "Throws rocks. The baseline.", start: true },
     digger:   { note: "Pulls gold out of the ground.", start: true },
     barricade:{ note: "Doesn't fight. Won't move.", start: true },
-    sapper:   { note: "Shovels rubble out of its lane.", unlock: "Clear a chapter in The Scree" },
-    tollkeep: { note: "Takes a cut off every kill in its lane.", unlock: "Clear a chapter in The Rot" },
-    lantern:  { note: "Lights the lane it stands in.", unlock: "Reach chapter 2 of The Deep" },
+    sapper:   { note: "Shovels rubble out of its lane.", meets: "scree" },
+    tollkeep: { note: "Takes a cut off every kill in its lane.", meets: "rot" },
+    lantern:  { note: "Lights the lane it stands in.", meets: "deep" },
+    hollerer: { note: "Jeers. Heroes in its lane slow to shout back.",
+                unlock: "Clear chapter 2 of any world" },
   };
   const FIRST = ["Grub","Nix","Pell","Odd","Wex","Tunk","Mib","Sorrel","Krug","Fen",
                  "Bristle","Nog","Vetch","Hob","Clatter","Muck","Pip","Snell"];
@@ -1731,9 +1739,7 @@
 
   function unlockCheck(ev) {
     const want = {
-      sapper:   () => ev.clearedIn === "scree",
-      tollkeep: () => ev.clearedIn === "rot",
-      lantern:  () => ev.world === "deep" && ev.chapter >= 2,
+      hollerer: () => ev.clearedIn && ev.chapter >= 2,
     };
     const got = [];
     for (const k in want) {
@@ -1804,36 +1810,43 @@
         b.style.setProperty("--role", V.UNITS[k].tint);
         b.append(el("span", "gob-role", "???"));
         b.append(el("span", "gob-name", "— — —"));
-        b.append(el("span", "gob-note", ROLES[k].unlock));
+        b.append(el("span", "gob-note", ROLES[k].meets
+          ? "Meets you in " + V.WORLDS[ROLES[k].meets].name
+          : ROLES[k].unlock));
         lc.append(b);
       }
       lp.append(lc); panels.push(lp);
     }
     const row = el("div", "m-row");
-    const go = el("button", "btn on", "Muster a crew");
-    go.onclick = muster; row.append(go); panels.push(row);
+    const go = el("button", "btn on", "Pick a world");
+    go.onclick = worlds; row.append(go); panels.push(row);
     show(panels);
   }
 
   // ------------------------------------------------------------------ muster
   let picked = [];
+  const CREW_MAX = 5;
   function muster() {
     picked = [];
+    const w = V.WORLDS[chosenWorld];
     const p = el("div", "m-panel");
-    p.append(el("h2", null, "Take up to four foremen"));
+    p.append(el("h2", null, "Pack for " + w.name));
     const n = el("p", "m-note");
-    n.innerHTML = "You bring <b>foremen</b>, not soldiers. Down there you place as many of each "
-      + "as you can pay for — the crew comes out of the warren, and the foreman's name goes "
-      + "with all of them. That is how one goblin fills five tiles.";
+    n.innerHTML = "<b>" + w.rule + "</b> " + w.fix;
     p.append(n);
+    const n2 = el("p", "m-note");
+    n2.innerHTML = "You bring <b>foremen</b>, not soldiers. Down there you place as many of each "
+      + "as you can pay for — the crew comes out of the warren, and the foreman's name goes with "
+      + "all of them. That is how one goblin fills five tiles.";
+    p.append(n2);
     const seen = {}, c = el("div", "crew"), count = el("p", "m-note");
     const uniq = M.warren.filter(g => seen[g.role] ? false : (seen[g.role] = 1));
     const redraw = () => {
-      count.innerHTML = picked.length + " of 4 — <b>"
+      count.innerHTML = picked.length + " of " + CREW_MAX + " — <b>"
         + (picked.map(g => V.UNITS[g.role].name).join(", ") || "nobody") + "</b>";
       [...c.children].forEach((b, i) => {
         b.classList.toggle("picked", picked.includes(uniq[i]));
-        b.disabled = !picked.includes(uniq[i]) && picked.length >= 4;
+        b.disabled = !picked.includes(uniq[i]) && picked.length >= CREW_MAX;
       });
       next.disabled = picked.length === 0;
     };
@@ -1843,26 +1856,34 @@
       b.append(el("span", "gob-role", V.UNITS[g.role].name + " · " + V.UNITS[g.role].cost + "g"));
       b.append(el("span", "gob-name", g.name));
       b.append(el("span", "gob-note", ROLES[g.role].note));
+      if (V.UNITS[g.role].answers === chosenWorld) {
+        const tag = el("span", "gob-note", "✦ answers " + V.WORLDS[chosenWorld].name);
+        tag.style.color = "var(--gold)";
+        b.append(tag);
+      }
       b.onclick = () => { const i = picked.indexOf(g);
-        if (i >= 0) picked.splice(i, 1); else if (picked.length < 4) picked.push(g);
+        if (i >= 0) picked.splice(i, 1); else if (picked.length < CREW_MAX) picked.push(g);
         redraw(); };
       c.append(b);
     }
     p.append(c, count);
     const row = el("div", "m-row");
-    const back = el("button", "btn", "Back"); back.onclick = warren;
-    const next = el("button", "btn on", "Choose a world"); next.onclick = worlds;
+    const back = el("button", "btn", "Back"); back.onclick = worlds;
+    const next = el("button", "btn on", "Go down"); next.onclick = begin;
     row.append(back, next);
     show([p, row]); redraw();
   }
 
   // ------------------------------------------------------------------ worlds
+  let chosenWorld = null;
   function worlds() {
+    R = null;
     const p = el("div", "m-panel");
     p.append(el("h2", null, "Where to"));
     const n = el("p", "m-note");
-    n.innerHTML = "Each world breaks something you rely on and names the goblin that answers it. "
-      + "You can go without the answer. It just costs you.";
+    n.innerHTML = "Each world breaks something you rely on. <b>Somebody who lives there will meet "
+      + "you at the mouth</b> and join the warren for good — you pick your crew after, knowing "
+      + "what you are walking into.";
     p.append(n);
     const ws = el("div", "worlds");
     for (const key in V.WORLDS) {
@@ -1871,23 +1892,58 @@
       b.append(el("span", "world-tier", "Tier " + w.tier));
       b.append(el("span", "world-name", w.name));
       b.append(el("span", "world-rule", w.rule));
-      const have = picked.some(g => g.role === w.answer);
-      const f = el("span", "world-fix", (have ? "✓ answered — " : "✗ no answer — ") + w.fix);
-      if (!have) f.style.color = "var(--alarm)";
+      const known = M.unlocked.includes(w.answer);
+      const f = el("span", "world-fix",
+        (known ? "✓ in the warren — " : "✦ meets you there — ") + w.fix);
+      if (!known) f.style.color = "var(--gold)";
       b.append(f);
-      b.onclick = () => begin(key);
+      b.onclick = () => {
+        chosenWorld = key;
+        const joined = meetLocal(key);
+        if (joined) return greeting(joined, w);
+        muster();
+      };
       ws.append(b);
     }
     p.append(ws);
     const row = el("div", "m-row");
-    const back = el("button", "btn", "Back"); back.onclick = muster;
+    const back = el("button", "btn", "Back"); back.onclick = warren;
     row.append(back);
     show([p, row]);
   }
 
+  // The counter arrives with the problem, never after it. Gating a world's answer
+  // behind clearing that world made the first trip unanswerable by construction.
+  function greeting(name, w) {
+    const p = el("div", "m-panel");
+    p.append(el("h2", null, "Somebody is waiting at the mouth"));
+    const n = el("p", "m-note");
+    n.innerHTML = "<b style='color:var(--gold)'>" + name + "</b> lives down here and knows the "
+      + "ground. " + w.fix + " They have joined the warren for good, whether this trip goes "
+      + "well or not.";
+    p.append(n);
+    const n2 = el("p", "m-note");
+    n2.innerHTML = "You do not have to take them. The world is beatable without — it is just "
+      + "harder, the way a roof level is beatable without a pot.";
+    p.append(n2);
+    const row = el("div", "m-row");
+    const b = el("button", "btn on", "Pack for it"); b.onclick = muster;
+    row.append(b);
+    show([p, row]);
+  }
+
   // ------------------------------------------------------------------ the run
-  function begin(world) {
-    R = { world, chapter: 1, chamber: 1, scrip: 0, crew: picked.slice() };
+  function meetLocal(world) {
+    const role = V.WORLDS[world].answer;
+    if (M.unlocked.includes(role)) return null;
+    M.unlocked.push(role);
+    for (let i = 0; i < 3; i++) M.warren.push(newGob(role));
+    save();
+    return V.UNITS[role].name;
+  }
+
+  function begin() {
+    R = { world: chosenWorld, chapter: 1, chamber: 1, scrip: 0, crew: picked.slice() };
     for (const g of R.crew) g.runs++;
     save(); chapterMap();
   }
