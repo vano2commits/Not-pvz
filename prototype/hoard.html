@@ -404,7 +404,8 @@
   // The original opens 1-1 on a single lane and adds lanes as the world goes on. We do
   // the same inside one level, centre-out, so an early wave can never ask you to cover
   // more ground than a cleared wave has paid for.
-  const RUBBLE_LIFE = 14;          // seconds before a rockfall settles on its own
+  const VEIN_PULLS = 26;            // roughly how many payouts a cell has in it
+  const RUBBLE_LIFE = 18;          // seconds before a rockfall settles on its own
   const LANE_ORDER = [2, 1, 3, 0, 4];
   const lanesOpen = ix => ix < 3 ? 3 : ix < 4 ? 4 : 5;
   // Ground being open is not the same as it being used. Wave 1 comes down a single lane
@@ -423,6 +424,10 @@
     // Chapter 2 onward. Hops the first goblin it meets, so a wall on its own stops being
     // an answer and where you stand things matters again.
     leaper:   { name: "Leaper",   hp: 190, speed: 34, dps: 24, purse: 24, pts: 2, leaps: true },
+    // Shrugs off small hits, so chip damage stops working and you have to concentrate.
+    pavise:   { name: "Pavise",   hp: 300, speed: 16, dps: 26, purse: 28, pts: 3, soak: 14 },
+    // Fast, fragile, and arrives in a clump. Punishes a lane you left thin.
+    runner:   { name: "Runner",   hp: 90,  speed: 58, dps: 12, purse: 10, pts: 1 },
   };
 
   // Each world breaks one thing you lean on and names the goblin that answers it —
@@ -439,7 +444,8 @@
              fix: "A Powder Keg is a trap you place yourself." },
   };
 
-  const S_ = "squire", C_ = "scout", G_ = "sergeant", L_ = "leaper";
+  const S_ = "squire", C_ = "scout", G_ = "sergeant", L_ = "leaper",
+        P_ = "pavise", R_ = "runner";
   const WAVES = [
     // One new thing per wave, the way 1-2 adds a Conehead rather than a tougher Basic.
     // Waves 1-3 are squires on three lanes: enough to learn the lane and bank a purse.
@@ -463,7 +469,7 @@
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
       traps: new Array(ROWS).fill(CFG.world !== "deep"),
       cool: Object.fromEntries(Object.keys(UNITS).map(k => [k, 0])),
-      buried: {}, buryT: 14,
+      buried: {}, buryT: 14, veins: {},
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
       waveLanes: [],
       // 0 = still caved in, 1 = open ground. Closed lanes are rubble you cannot build on.
@@ -541,7 +547,10 @@
       t += rnd(gap * 0.65, gap * 1.5);
       // deeper chapters send leapers in place of scouts — a different problem, not a
       // bigger one, which is the whole point of going down
-      const swap = CFG.chapter >= 2 && type === C_ && Math.random() < 0.55 ? L_ : type;
+      let swap = type;
+      if (CFG.chapter >= 2 && type === C_ && Math.random() < 0.55) swap = L_;
+      if (CFG.chapter >= 3 && type === G_ && Math.random() < 0.5) swap = P_;
+      if (S.waveIx >= 3 && type === S_ && Math.random() < 0.3) swap = R_;
       return { type: swap, at: t };
     });
     S.waveLanes = [];
@@ -628,10 +637,11 @@
       S.buryT -= dt;
       // never more than a few at once, or the board quietly disappears
       if (S.buryT <= 0 && Object.keys(S.buried).length < 3) {
-        S.buryT = 16;
+        S.buryT = 12;
         const free = [];
         for (let c = 1; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
-          if (!laneIsOpen(r) || S.buried[c + "," + r] || gobAt(c, r)) continue;
+          if (!laneIsOpen(r) || S.buried[c + "," + r]) continue;
+          // occupied cells are fair game — burying a working goblin is the threat
           free.push([c, r]);
         }
         if (free.length) {
@@ -655,7 +665,10 @@
       }
       // the next wave comes when this one is mostly broken, the way the original does it,
       // rather than after the board is clear and a long pause on top
-      const spent = !S.queue.length && S.foes.length &&
+      // The trigger pulls the NEXT wave forward. On the last one there is no next wave,
+      // so it would end the chamber with heroes still walking — clear the board first.
+      const last = S.waveIx >= CHAMBER_WAVES.length - 1;
+      const spent = !last && !S.queue.length && S.foes.length &&
                     S.foes.reduce((a, f) => a + f.hp, 0) <
                     S.foes.reduce((a, f) => a + f.maxHp, 0) * 0.45;
       if (!S.queue.length && (!S.foes.length || spent)) {
@@ -672,6 +685,9 @@
     for (const g of S.goblins) {
       if (g.hp <= 0) continue;
       const p = cellOf(g);
+      // under a rockfall: still there, still soaks hits, but not working
+      if (S.buried[g.col + "," + g.row]) { g.entombed = 1; continue; }
+      g.entombed = 0;
       g.cd -= dt;
       if (g.squash > 0) g.squash -= dt * 3.4;
       if (g.hurtT > 0) g.hurtT -= dt;
@@ -744,12 +760,23 @@
         // more picks means a faster shaft as well as a bigger pull
         const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, g.age * dn / DIG_WARM);
         const rot = CFG.world === "rot" ? 0.25 : 1;
-        const take = Math.max(1, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85) * rot));
+        const vk = g.col + "," + g.row;
+        if (S.veins[vk] === undefined) S.veins[vk] = 1;
+        const left = S.veins[vk];
+        const take = Math.max(0, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85)
+                                            * rot * left));
         rate += take / DIG_EVERY;
         if (g.dcd === undefined) g.dcd = 1.2;
         g.dcd -= dt;
         if (g.dcd <= 0) {
           g.dcd = DIG_EVERY;
+          // every pull takes a bite out of the pocket under it
+          S.veins[vk] = Math.max(0, S.veins[vk] - (1 / VEIN_PULLS) * dn);
+          if (take <= 0) {
+            g.squash = 0.6;
+            popText(p.x + CELL / 2, p.y + 8, "DRY", "#8a8095");
+            continue;
+          }
           S.mined += take;
           g.squash = 1;
           spill(p.x + CELL / 2, p.y + CELL * 0.55, take);
@@ -776,7 +803,11 @@
       const f = S.foes.find(f => f.lane === s.lane && f.hp > 0 && Math.abs(f.x - s.x) < 22
                                  && !(s.hitSet && s.hitSet.has(f)));
       if (f) {
-        f.hp -= s.dmg; f.hitT = 0.12; f.squash = 1; f.x += 3;
+        const soak = FOES[f.type].soak || 0;
+        f.hp -= Math.max(4, s.dmg - soak); f.hitT = 0.12; f.squash = 1; f.x += 3;
+        if (soak && s.dmg <= soak + 4)
+          burst(s.x, s.y, 3, { colors: ["#d9cdb4", "#8d8496"], spread: 90,
+                               size: [1.2, 2.2], life: [0.1, 0.25] });
         if (s.pierce > 0) {
           (s.hitSet = s.hitSet || new Set()).add(f);
           s.pierce--;
@@ -1104,9 +1135,11 @@
     const hop = f.vault !== undefined ? -Math.sin(f.vault * Math.PI) * 44 : 0;
     const bob = Math.sin(f.bob) * (f.type === "scout" ? 3 : 2) + hop;
     const tint = f.type === "scout" ? "#8d8496" : f.type === "sergeant" ? "#b98a4e"
-               : f.type === "leaper" ? "#a9c0d8" : "#c9ced8";
+               : f.type === "leaper" ? "#a9c0d8" : f.type === "pavise" ? "#7e8a9c"
+               : f.type === "runner" ? "#d8c9a0" : "#c9ced8";
     const scale = (f.type === "scout" ? 0.9 : f.type === "sergeant" ? 1.16
-                 : f.type === "leaper" ? 0.94 : 1) * K;
+                 : f.type === "leaper" ? 0.94 : f.type === "pavise" ? 1.1
+                 : f.type === "runner" ? 0.8 : 1) * K;
     const sq = f.squash > 0 ? ease(clamp(f.squash, 0, 1)) : 0;
 
     cx.fillStyle = "rgba(0,0,0,.3)";
@@ -1131,6 +1164,12 @@
       cx.fillStyle = flat || "#5a5560";
       cx.fillRect(-9, 26, 6, 8 + Math.sin(f.bob) * 3);
       cx.fillRect(3, 26, 6, 8 - Math.sin(f.bob) * 3);
+      if (f.type === "pavise" && !f.bleeding) {
+        cx.fillStyle = flat || "#5b6472";
+        cx.beginPath(); cx.rect(-19, -14, 8, 38); cx.fill();
+        cx.fillStyle = flat || "#8996a8";
+        cx.beginPath(); cx.rect(-19, -14, 8, 8); cx.fill();
+      }
       if (f.type === "sergeant" && !f.bleeding) {
         cx.fillStyle = flat || "#8a6234";
         cx.beginPath(); cx.moveTo(-10, -4); cx.lineTo(10, -4); cx.lineTo(8, 16); cx.lineTo(-8, 16); cx.closePath(); cx.fill();
@@ -1169,12 +1208,19 @@
     for (let c = 0; c < COLS; c++) {
       const depth = c / (COLS - 1);
       const warm = (0.012 + depth * 0.055) * (rot ? 0.25 : 1);
-      cx.fillStyle = rot ? "rgba(150,150,160," + warm + ")"
-                         : "rgba(232,192,90," + warm + ")";
-      cx.fillRect(OX + c * CELL, OY, CELL, ROWS * CELL);
+      for (let r = 0; r < ROWS; r++) {
+        const lv = S.veins[c + "," + r];
+        const dug = lv === undefined ? 1 : lv;
+        cx.fillStyle = rot ? "rgba(150,150,160," + warm * dug + ")"
+                           : "rgba(232,192,90," + warm * dug + ")";
+        cx.fillRect(OX + c * CELL, OY + r * CELL, CELL, CELL);
+      }
       const n = Math.round(depth * depth * 9);
       for (let r = 0; r < ROWS; r++) {
-        for (let i = 0; i < n; i++) {
+        const leftV = S.veins[c + "," + r];
+        const dug = leftV === undefined ? 1 : leftV;
+        const shown = Math.round(n * dug);
+        for (let i = 0; i < shown; i++) {
           const a = ((i * 2.399 + c * 1.7 + r * 0.31) % 1);
           const b = ((i * 4.771 + r * 2.3 + c * 0.53) % 1);
           const px = OX + c * CELL + 6 + a * (CELL - 12);
@@ -1776,10 +1822,10 @@
 
   // Everything on the bench is a sidegrade you can already beat the game without.
   const BENCH = [
-    { role: "hollerer", cost: 6 },
-    { role: "sapper",   cost: 4 },
-    { role: "tollkeep", cost: 4 },
-    { role: "keg",      cost: 4 },
+    { role: "sapper",   cost: 14 },
+    { role: "tollkeep", cost: 14 },
+    { role: "keg",      cost: 16 },
+    { role: "hollerer", cost: 22 },
   ];
   const SAVE = "hoard.v3";
   let M, R = null;
@@ -2036,7 +2082,7 @@
 
   function chamberDone(won, goldLeft) {
     if (!won) return lost();
-    R.scrip += 2 + Math.round(goldLeft / 120);
+    R.scrip += 1 + Math.round(goldLeft / 400);
     if (R.chamber < 3) { R.chamber++; save(); return chapterMap(); }
     return chapterCleared();
   }
