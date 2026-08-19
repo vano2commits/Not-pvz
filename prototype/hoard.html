@@ -339,7 +339,7 @@
   const OX = 96, OY = 52;
   const K = CELL / 96;              // art was drawn for a 96px cell
 
-  const START_COINS = 340;
+  const START_COINS = 400;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[(Math.random() * a.length) | 0];
@@ -382,7 +382,7 @@
   // Each one changes behaviour rather than nudging a number, so a run's crew ends up
   // shaped differently from the last one's.
   const UPGRADES = {
-    ricochet:  { name: "Ricochet",    on: ["chucker"], note: "Rocks skip to a second hero." },
+    ricochet:  { name: "Ricochet",    on: ["chucker"], note: "Shots punch through the rank behind." },
     quarryman: { name: "Quarryman",   on: ["chucker"], note: "Slower. Hits like a landslide." },
     sling:     { name: "Sling",       on: ["chucker"], note: "Twice the rate, half the rock." },
     deepbore:  { name: "Deep Bore",   on: ["digger"],  note: "The pocket underneath lasts twice as long." },
@@ -482,7 +482,7 @@
   // A Digger's take is a function of how far forward you put it. No tiles, no lottery:
   // the gradient is continuous and the choice is entirely yours.
   const DIG_EVERY = 5;
-  const yieldAt = col => Math.round(5 + col * 2.4);
+  const yieldAt = col => Math.round(3 + col * 1.5);
   const RICH_MAX = yieldAt(COLS - 1);
   // A Digger sinks its shaft deeper the longer it is left alone, so abandoning one
   // costs you the work. Placing a fresh miner elsewhere is no longer free.
@@ -506,16 +506,16 @@
   // a cleared wave has to pay for the answer to the next one. Wave 1 nets ~60, which is
   // a Digger and change; two cleared waves buy a Chucker.
   const FOES = {
-    squire:   { name: "Squire",   hp: 150, speed: 22, dps: 22, purse: 14, pts: 1 },
-    scout:    { name: "Scout",    hp: 150, speed: 42, dps: 16, purse: 13, pts: 2 },
-    sergeant: { name: "Sergeant", hp: 520, speed: 18, dps: 30, purse: 30, pts: 2 },
+    squire:   { name: "Squire",   hp: 150, speed: 22, dps: 22, purse: 10, pts: 1 },
+    scout:    { name: "Scout",    hp: 150, speed: 42, dps: 16, purse: 9, pts: 2 },
+    sergeant: { name: "Sergeant", hp: 520, speed: 18, dps: 30, purse: 21, pts: 2 },
     // Chapter 2 onward. Hops the first goblin it meets, so a wall on its own stops being
     // an answer and where you stand things matters again.
-    leaper:   { name: "Leaper",   hp: 190, speed: 34, dps: 24, purse: 24, pts: 2, leaps: true },
+    leaper:   { name: "Leaper",   hp: 190, speed: 34, dps: 24, purse: 17, pts: 2, leaps: true },
     // Shrugs off small hits, so chip damage stops working and you have to concentrate.
-    pavise:   { name: "Pavise",   hp: 300, speed: 16, dps: 26, purse: 28, pts: 3, soak: 14 },
+    pavise:   { name: "Pavise",   hp: 300, speed: 16, dps: 26, purse: 20, pts: 3, soak: 14 },
     // Fast, fragile, and arrives in a clump. Punishes a lane you left thin.
-    runner:   { name: "Runner",   hp: 90,  speed: 58, dps: 12, purse: 10, pts: 1 },
+    runner:   { name: "Runner",   hp: 90,  speed: 58, dps: 12, purse: 7, pts: 1 },
   };
 
   // Each world breaks one thing you lean on and names the goblin that answers it —
@@ -808,14 +808,14 @@
           const weak = countOf(g, "chucker") === 0;
           let spec = cn === 1 ? { cd: weak ? 1.7 : 1.3, dmg: weak ? 12 : 22,
                                   pierce: 0, kind: "rock", snd: "throw" }
-                   : cn === 2 ? { cd: 1.4, dmg: 36, pierce: 2, kind: "arrow", snd: "bow" }
-                              : { cd: 2.2, dmg: 66, pierce: 99, kind: "bolt", snd: "bolt" };
+                   : cn === 2 ? { cd: 1.25, dmg: 42, pierce: 0, kind: "arrow", snd: "bow" }
+                              : { cd: 1.2,  dmg: 61, pierce: 0, kind: "bolt",  snd: "bolt" };
           // the run's upgrades reshape the shot rather than scaling it
           if (gobHas(g, "quarryman")) spec = { ...spec, cd: spec.cd * 1.8,
                                                dmg: Math.round(spec.dmg * 2.6), kind: "bolt" };
           if (gobHas(g, "sling"))     spec = { ...spec, cd: spec.cd * 0.5,
                                                dmg: Math.round(spec.dmg * 0.55) };
-          if (gobHas(g, "ricochet"))  spec = { ...spec, pierce: Math.max(spec.pierce, 1) };
+          if (gobHas(g, "ricochet"))  spec = { ...spec, pierce: Math.max(spec.pierce, cn) };
           spec = { ...spec, dmg: spec.dmg + 7 * gobSmall(g, "sharp") };
           // what the body is made of decides what comes out of it
           if (countOf(g, "keg") > 0)
@@ -1055,7 +1055,7 @@
             { colors: ["#c9ced8", "#8b93a2", "#5a5560"], spread: 280, size: [1.6, 4], life: [0.3, 0.7] });
       if (!f.byTrap) { kick(1.6); Sound.play("kill"); }
       // The Rot does not make you poorer, it changes where money comes from.
-      let purse = Math.round(FOES[f.type].purse * (CFG.world === "rot" ? 2.6 : 1));
+      let purse = Math.round(FOES[f.type].purse * (CFG.world === "rot" ? 1.9 : 1));
       // A Tollkeeper standing in the lane takes its cut off the body.
       let toll = S.goblins.filter(g => g.row === f.lane && countOf(g, "tollkeep") > 0)
                           .reduce((a, g) => a + countOf(g, "tollkeep"), 0);
@@ -2412,20 +2412,7 @@
       c.append(btn);
     }
     p.append(c);
-    const wrap = [p];
-    if (R.chamber < 3) { const shopHost = { append: n => wrap.push(n) }; minorShop(shopHost); }
-    const row = el("div", "m-row");
-    const on = el("button", "btn on", "Take it and go on");
-    on.disabled = true;
-    row.append(on);
-    // the free pick is compulsory; the shop is not
-    for (const btn of c.children) btn.addEventListener("click", () => {
-      [...c.children].forEach(x => x.disabled = true);
-      on.disabled = false;
-    });
-    on.onclick = () => then();
-    wrap.push(row);
-    show(wrap);
+    show([p]);
   }
 
   function chamberDone(won, goldLeft, board, veins, smalls) {
@@ -2448,7 +2435,20 @@
       R.board = null; R.veins = null;
       return chapterCleared();
     };
-    offerUpgrades(onward);
+    betweenChambers(onward);
+  }
+
+  // One screen between chambers: the workbench. Minor things, bought with gold.
+  function betweenChambers(then) {
+    const p = el("div", "m-panel");
+    p.append(el("h2", null, "Chamber " + (R.chamber - 1) + " held"));
+    const host = [];
+    minorShop({ append: n => host.push(n) });
+    const row = el("div", "m-row");
+    const on = el("button", "btn on", "On to the next");
+    on.onclick = () => then();
+    row.append(on);
+    show(host.length ? host.concat([row]) : [p, row]);
   }
 
   function chapterCleared() {
