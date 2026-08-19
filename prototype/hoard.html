@@ -327,7 +327,7 @@
   const OX = 96, OY = 52;
   const K = CELL / 96;              // art was drawn for a 96px cell
 
-  const START_COINS = 320;
+  const START_COINS = 340;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[(Math.random() * a.length) | 0];
@@ -561,11 +561,13 @@
   // A chamber runs a slice of the wave table; deeper chapters run more of it, and the
   // heroes themselves get tougher. Three chambers to a chapter.
   function wavesForChamber() {
-    const n = Math.min(WAVES.length, 3 + CFG.chamber + (CFG.chapter - 1));
+    const n = Math.min(WAVES.length, 3 + CFG.chamber * 2 + (CFG.chapter - 1));
     return WAVES.slice(0, n);
   }
   let CHAMBER_WAVES = WAVES;
-  const hpScale = () => 1 + (CFG.chapter - 1) * 0.35 + (CFG.chamber - 1) * 0.12;
+  // The board carries across a chapter, so each chamber has to ask a good deal more
+  // than the last or the second and third are a victory lap.
+  const hpScale = () => 1 + (CFG.chapter - 1) * 0.35 + (CFG.chamber - 1) * 0.28;
 
   function startWave() {
     S.waveIx++;
@@ -616,12 +618,18 @@
   }
 
   let onChamberEnd = null;
+  const survivors = () => S.goblins.filter(g => g.hp > 0).map(g => ({
+    parts: g.parts.slice(), col: g.col, row: g.row, age: g.age || 0,
+    hpFrac: clamp(g.hp / maxHpOf(g), 0.15, 1),
+  }));
   function victory() {
     S.over = true; S.won = true; Sound.play("win"); kick(14); flash(0.5);
     for (let i = 0; i < 5; i++)
       setTimeout(() => burst(rnd(250, 900), rnd(120, 380), 24,
         { colors: ["#e8c05a", "#fff3cf", "#8ed07a"], spread: 320 }), i * 170);
-    if (onChamberEnd) setTimeout(() => onChamberEnd(true, Math.round(S.coins)), 1500);
+    if (onChamberEnd)
+      setTimeout(() => onChamberEnd(true, Math.round(S.coins), survivors(),
+                                    Object.assign({}, S.veins)), 1500);
   }
   function defeat() {
     if (S.over) return;
@@ -1820,6 +1828,8 @@
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
     nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, UPGRADES, place: tryPlace,
+    remove: removeGoblin,
+    veinAt: (c, r) => S.veins[c + "," + r] === undefined ? 1 : S.veins[c + "," + r],
     get cfg() { return CFG; },
     // Start a chamber for the meta layer. cfg = { world, chapter, chamber, roles }.
     begin(cfg, done) {
@@ -1828,6 +1838,22 @@
       UPS = cfg.upgrades || {};
       onChamberEnd = done;
       newRun();
+      // A chapter is one continuous defence. Whatever lived through the last chamber is
+      // still standing where you left it, at the health it survived on, and the gold you
+      // did not spend is still in your pocket.
+      if (cfg.board && cfg.board.length) {
+        for (const b of cfg.board) {
+          if (!laneIsOpen(b.row)) continue;
+          const g = { parts: b.parts.slice(), col: b.col, row: b.row, hp: 0, born: -99,
+                      age: b.age || 0, cd: 0.5, dcd: 1.2, squash: 0, land: 0,
+                      recoil: 0, hurtT: 0, wind: 0 };
+          g.hp = Math.max(12, maxHpOf(g) * (b.hpFrac === undefined ? 1 : b.hpFrac));
+          S.goblins.push(g);
+        }
+      }
+      if (cfg.carryGold !== undefined) S.coins = cfg.carryGold;
+      else S.coins = Math.round(START_COINS * (1 + (CFG.chapter - 1) * 0.5));
+      if (cfg.veins) S.veins = Object.assign({}, cfg.veins);
       CHAMBER_WAVES = wavesForChamber();
       S.bannerText = "CHAMBER " + CFG.chamber + " OF 3";
       S.banner = 2.4;
@@ -1883,7 +1909,8 @@
     { role: "keg",      cost: 16 },
     { role: "hollerer", cost: 22 },
   ];
-  const SAVE = "hoard.v3";
+  const CHAPTERS_PER_WORLD = 3;
+  const SAVE = "hoard.v4";
   let M, R = null;
   const newGob = role => ({ id: Math.random().toString(36).slice(2,8), role,
                             name: rnd(FIRST) + " " + rnd(LAST), runs: 0 });
@@ -2051,7 +2078,9 @@
     for (const key in V.WORLDS) {
       const w = V.WORLDS[key];
       const b = el("button", "world");
-      b.append(el("span", "world-tier", "Tier " + w.tier));
+      const done = M.cleared && M.cleared[key];
+      b.append(el("span", "world-tier",
+        "Tier " + w.tier + " · " + CHAPTERS_PER_WORLD + " chapters" + (done ? " · CLEARED" : "")));
       b.append(el("span", "world-name", w.name));
       b.append(el("span", "world-rule", w.rule));
       const known = M.unlocked.includes(w.answer);
@@ -2101,7 +2130,7 @@
 
   function begin() {
     R = { world: chosenWorld, chapter: 1, chamber: 1, scrip: 0, crew: picked.slice(),
-          upgrades: {} };
+          upgrades: {}, board: null, gold: undefined, veins: null, cleared: false };
     for (const g of R.crew) g.runs++;
     save(); chapterMap();
   }
@@ -2109,7 +2138,8 @@
   function chapterMap() {
     const w = V.WORLDS[R.world];
     const p = el("div", "m-panel");
-    p.append(el("h2", null, "Chapter " + R.chapter + " — " + w.name));
+    p.append(el("h2", null, "Chapter " + R.chapter + " of " + CHAPTERS_PER_WORLD
+                            + " — " + w.name));
     const n = el("p", "m-note");
     const have = R.crew.some(g => g.role === w.answer);
     n.innerHTML = "<b>" + w.rule + "</b> " + (have
@@ -2124,6 +2154,12 @@
       st.append(d);
     }
     p.append(st);
+    if (R.board && R.board.length) {
+      const st2 = el("p", "m-note");
+      st2.innerHTML = "<b>" + R.board.length + "</b> still standing from last chamber, "
+        + "and <b>" + (R.gold || 0) + "</b> gold in hand.";
+      p.append(st2);
+    }
     const owned = Object.entries(R.upgrades || {});
     if (owned.length) {
       const line = el("div", "crew");
@@ -2147,7 +2183,8 @@
     metaEl.hidden = true; gameEl.hidden = false;
     window.scrollTo(0, 0);
     V.begin({ world: R.world, chapter: R.chapter, chamber: R.chamber,
-              roles: R.crew.map(g => g.role), upgrades: R.upgrades }, chamberDone);
+              roles: R.crew.map(g => g.role), upgrades: R.upgrades,
+              board: R.board, carryGold: R.gold, veins: R.veins }, chamberDone);
   }
 
   // Three offers between chambers, Mewgenics-ish: each one bends a foreman rather than
@@ -2187,11 +2224,21 @@
     show([p]);
   }
 
-  function chamberDone(won, goldLeft) {
+  function chamberDone(won, goldLeft, board, veins) {
     if (!won) return lost();
-    R.scrip += 1 + Math.round(goldLeft / 400);
+    R.scrip += (1 + Math.round(goldLeft / 400)) * R.chapter;
     const onward = () => {
-      if (R.chamber < 3) { R.chamber++; save(); return chapterMap(); }
+      if (R.chamber < 3) {
+        R.chamber++;
+        // the chapter continues: keep what lived and what you did not spend, plus a
+        // small wage so a wiped-out lane can be answered
+        R.board = board;
+        R.veins = veins;
+        R.gold = Math.min(goldLeft, 180) + 70;
+        save(); return chapterMap();
+      }
+      // a new chapter is new ground — fresh board, starting purse
+      R.board = null; R.gold = undefined; R.veins = null;
       return chapterCleared();
     };
     offerUpgrades(onward);
@@ -2214,21 +2261,41 @@
     }
     const row = el("div", "m-row");
     const out = el("button", "btn on", "Walk out with it"); out.onclick = bank;
-    const down = el("button", "btn danger", "One chapter deeper");
-    down.onclick = () => { R.chapter++; R.chamber = 1; save();
-      const g2 = unlockCheck({ world: R.world, chapter: R.chapter });
-      if (g2.length) { save(); alert(g2.join(", ") + " joined the warren."); }
-      chapterMap(); };
-    row.append(out, down);
+    if (R.chapter < CHAPTERS_PER_WORLD) {
+      const down = el("button", "btn danger",
+        "Deeper (" + (R.chapter + 1) + " of " + CHAPTERS_PER_WORLD + ")");
+      down.onclick = () => {
+        R.chapter++; R.chamber = 1; R.board = null; R.gold = undefined; R.veins = null; save();
+        chapterMap();
+      };
+      row.append(out, down);
+    } else {
+      // the bottom of the world. There is nowhere further to go, and it says so.
+      const fin = el("p", "m-note");
+      fin.innerHTML = "<b style='color:var(--gold)'>You are at the bottom of "
+        + V.WORLDS[R.world].name + ".</b> Nothing below this.";
+      p.append(fin);
+      const done = el("button", "btn on", "Carry it home");
+      done.onclick = () => { R.cleared = true; bank(); };
+      row.replaceChildren(done);
+    }
     show([p, row]);
   }
 
   function bank() {
-    M.scrip += R.scrip; save();
+    let bonus = 0;
+    if (R.cleared) {
+      bonus = 20;
+      M.cleared = M.cleared || {};
+      M.cleared[R.world] = true;
+    }
+    M.scrip += R.scrip + bonus; save();
     const p = el("div", "m-panel");
-    p.append(el("h2", null, "Home"));
+    p.append(el("h2", null, R.cleared ? V.WORLDS[R.world].name + " is finished" : "Home"));
     const n = el("p", "m-note");
-    n.innerHTML = "Banked <b>" + R.scrip + " scrip</b>. Everyone came back.";
+    n.innerHTML = "Banked <b>" + R.scrip + "</b>"
+      + (bonus ? " and <b style='color:var(--gold)'>" + bonus + " for the bottom</b>" : "")
+      + ". Everyone came back.";
     p.append(n);
     const row = el("div", "m-row");
     const b = el("button", "btn on", "Back to the warren"); b.onclick = warren;
