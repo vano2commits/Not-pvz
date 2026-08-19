@@ -211,7 +211,6 @@
     <canvas id="board" width="788" height="542"
       aria-label="Five lanes, seven columns. Goblins defend the caravan on the left from heroes entering on the right."></canvas>
     <div class="rack" id="rack"></div>
-    <div class="forge" id="forge"></div>
   </div>
 
   <div class="insp" id="insp">
@@ -399,11 +398,17 @@
   // Bought with gold, mid-chamber, and they stack. Small and numeric on purpose — the
   // between-chamber picks are the ones that change how a goblin behaves.
   const SMALLS = {
-    sharp: { name: "Sharper", note: "+7 damage", base: 55 },
-    tough: { name: "Tougher", note: "+30% hide", base: 50 },
-    hands: { name: "Quicker", note: "-18% recharge", base: 60 },
-    rich:  { name: "Richer",  note: "+25% take", base: 65, on: ["digger"] },
-    thrift:{ name: "Thrifty", note: "-8 gold to place", base: 70 },
+    // Combat sustain — the wave after this one is bigger, and these answer that.
+    sharp:  { name: "Sharper",  note: "+7 damage", base: 60, on: ["chucker","sapper","hollerer"] },
+    tough:  { name: "Tougher",  note: "+30% hide", base: 55 },
+    hands:  { name: "Quicker",  note: "-18% recharge", base: 65,
+              on: ["chucker","barricade","sapper","keg","hollerer"] },
+    // Economy sustain. By chamber two the ground you started on is going dry, so what
+    // is worth buying is a way to keep earning without it — not a faster Digger.
+    reseam: { name: "Reseam",   note: "Pockets last 40% longer", base: 85, on: ["digger"] },
+    scav:   { name: "Scavenger",note: "+6 gold per kill in its lane", base: 80,
+              on: ["chucker","tollkeep","sapper","hollerer","keg"] },
+    thrift: { name: "Thrifty",  note: "-8 gold to place", base: 70 },
   };
   let SM = {};                        // role -> { id: timesBought }
   const smallOf = (role, id) => (SM[role] && SM[role][id]) || 0;
@@ -490,11 +495,11 @@
   const VEIN_PULLS = 26;            // roughly how many payouts a cell has in it
   const RUBBLE_LIFE = 18;          // seconds before a rockfall settles on its own
   const LANE_ORDER = [2, 1, 3, 0, 4];
-  const lanesOpen = ix => ix < 3 ? 3 : ix < 4 ? 4 : 5;
+  const lanesOpen = ix => CFG.chamber > 1 ? 5 : ix < 3 ? 3 : ix < 4 ? 4 : 5;
   // Ground being open is not the same as it being used. Wave 1 comes down a single lane
   // however many are open, because 250 gold buys two Chuckers and no more — three lanes
   // at once is a trap you pay a bear trap for through no fault of your own.
-  const laneBudget = ix => ix === 0 ? 1 : ix === 1 ? 2 : 99;
+  const laneBudget = ix => CFG.chamber > 1 ? 99 : ix === 0 ? 1 : ix === 1 ? 2 : 99;
   const laneIsOpen = r => LANE_ORDER.indexOf(r) < lanesOpen(Math.max(S.waveIx, 0));
 
   // Purses are the whole early economy — there is no sun falling from the sky here, so
@@ -556,7 +561,8 @@
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
       waveLanes: [],
       // 0 = still caved in, 1 = open ground. Closed lanes are rubble you cannot build on.
-      laneReveal: new Array(ROWS).fill(0).map((_, r) => LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
+      laneReveal: new Array(ROWS).fill(0)
+        .map((_, r) => CFG.chamber > 1 || LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
       selUnit: null, selGob: null,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
       over: false, won: false, paused: false, t: 0, killed: 0, mined: 0, rate: 0,
@@ -646,7 +652,7 @@
     S.phase = "fight"; S.phaseT = 0;
     S.bannerText = "WAVE " + (S.waveIx + 1) + " — " + w.name.toUpperCase();
     S.banner = 2.1;
-    Sound.play("wave"); kick(2.5); renderPips(); rollForge();
+    Sound.play("wave"); kick(2.5); renderPips();
   }
 
   function chooseLane() {
@@ -811,9 +817,18 @@
                                                dmg: Math.round(spec.dmg * 0.55) };
           if (gobHas(g, "ricochet"))  spec = { ...spec, pierce: Math.max(spec.pierce, 1) };
           spec = { ...spec, dmg: spec.dmg + 7 * gobSmall(g, "sharp") };
+          // what the body is made of decides what comes out of it
+          if (countOf(g, "keg") > 0)
+            spec = { ...spec, kind: "bomb", aoe: 46 + 14 * countOf(g, "keg"),
+                     aoeDmg: Math.round(spec.dmg * 0.55), snd: "throw" };
+          if (countOf(g, "hollerer") > 0) spec = { ...spec, slow: 1.6 };
+          if (countOf(g, "sapper") > 0)   spec = { ...spec, shove: 12 * countOf(g, "sapper") };
+          if (countOf(g, "tollkeep") > 0) spec = { ...spec, bounty: 7 * countOf(g, "tollkeep") };
           g.cd = spec.cd;
           S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
-                         dmg: spec.dmg, pierce: spec.pierce, kind: spec.kind, trail: [], spin: 0 });
+                         dmg: spec.dmg, pierce: spec.pierce, kind: spec.kind, trail: [], spin: 0,
+                         aoe: spec.aoe, aoeDmg: spec.aoeDmg, slow: spec.slow,
+                         shove: spec.shove, bounty: spec.bounty });
           if (cn === 3) kick(3);
           Sound.play(spec.snd);
           burst(p.x + CELL * 0.64, p.y + CELL * 0.46, 3,
@@ -868,8 +883,7 @@
         if (S.veins[vk] === undefined) S.veins[vk] = 1;
         const left = S.veins[vk];
         // Prospector cashes in on fresh ground, which pushes you to keep moving
-        const rich = (gobHas(g, "prospect") && left > 0.92 ? 3 : 1)
-                     * (1 + 0.25 * gobSmall(g, "rich"));
+        const rich = gobHas(g, "prospect") && left > 0.92 ? 3 : 1;
         const take = Math.max(0, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85)
                                             * rot * left * rich));
         rate += take / DIG_EVERY;
@@ -878,7 +892,8 @@
         if (g.dcd <= 0) {
           g.dcd = DIG_EVERY;
           // every pull takes a bite out of the pocket under it
-          const bore = gobHas(g, "deepbore") ? 0.5 : 1;
+          const bore = (gobHas(g, "deepbore") ? 0.5 : 1)
+                       * Math.pow(0.71, gobSmall(g, "reseam"));
           S.veins[vk] = Math.max(0, S.veins[vk] - (1 / VEIN_PULLS) * dn * bore);
           if (take <= 0) {
             g.squash = 0.6;
@@ -912,7 +927,23 @@
                                  && !(s.hitSet && s.hitSet.has(f)));
       if (f) {
         const soak = FOES[f.type].soak || 0;
-        f.hp -= Math.max(4, s.dmg - soak); f.hitT = 0.12; f.squash = 1; f.x += 3;
+        f.hp -= Math.max(4, s.dmg - soak); f.hitT = 0.12; f.squash = 1;
+        f.x += 3 + (s.shove || 0);
+        if (s.slow) f.slowT = Math.max(f.slowT || 0, s.slow);
+        if (s.bounty) f.bounty = (f.bounty || 0) + s.bounty;
+        if (s.aoe) {
+          // a little bomb: everything close by in the lane catches some of it
+          for (const o of S.foes) {
+            if (o === f || o.lane !== s.lane || o.hp <= 0) continue;
+            if (Math.abs(o.x - s.x) > s.aoe) continue;
+            o.hp -= Math.max(3, s.aoeDmg - (FOES[o.type].soak || 0));
+            o.hitT = 0.1; o.squash = 0.7;
+          }
+          ring(s.x, s.y, s.aoe * 1.6, "rgba(232,192,90,.7)", 3, 0.22);
+          burst(s.x, s.y, 9, { colors: ["#e8c05a", "#fff3cf", "#d1553f"], spread: 260,
+                               size: [1.4, 3.2], life: [0.14, 0.36] });
+          kick(2.4); Sound.play("hit");
+        }
         if (soak && s.dmg <= soak + 4)
           burst(s.x, s.y, 3, { colors: ["#d9cdb4", "#8d8496"], spread: 90,
                                size: [1.2, 2.2], life: [0.1, 0.25] });
@@ -935,9 +966,10 @@
       const d = FOES[f.type];
       const prev = f.x;
       // A Hollerer's lane crawls, because everyone in it stops to argue.
+      if (f.slowT > 0) f.slowT -= dt;
       const jeering = S.goblins.some(g => g.row === f.lane &&
                                      (countOf(g, "hollerer") > 0 || gobHas(g, "loud")));
-      const jeer = jeering ? 0.5 : 1;
+      const jeer = (jeering ? 0.5 : 1) * (f.slowT > 0 ? 0.55 : 1);
       if (jeering && Math.random() < dt * 2.2)
         burst(f.x, laneY(f.lane) + CELL * 0.3, 2,
               { colors: ["#9a7fc4", "#c9b6e8"], spread: 60, size: [1.4, 2.6],
@@ -1028,6 +1060,8 @@
       let toll = S.goblins.filter(g => g.row === f.lane && countOf(g, "tollkeep") > 0)
                           .reduce((a, g) => a + countOf(g, "tollkeep"), 0);
       toll += S.goblins.filter(g => g.row === f.lane && gobHas(g, "sniffer")).length * 0.5;
+      const scav = S.goblins.filter(g => g.row === f.lane)
+                            .reduce((a, g) => a + gobSmall(g, "scav"), 0);
       if (toll) {
         purse = Math.round(purse * (1 + 1.6 * toll));
         // and it has to be visible, or nobody believes it is working
@@ -1039,6 +1073,7 @@
           g.squash = 1;
         }
       }
+      purse += 6 * scav + (f.bounty || 0);
       spill(f.x, y, purse);      // heroes still pay a little, immediately
     }
     S.foes = S.foes.filter(f => f.hp > 0);
@@ -1246,12 +1281,32 @@
       cx.font = "bold 10px " + FONT; cx.fillStyle = "#f5dc9c"; cx.textAlign = "center";
       cx.fillText(nameOf(g), cxp, p.y + CELL - 1);
     }
+
+    // Dead ground under a Digger is the single most missable thing on the board, so it
+    // gets an empty pan over its head and stops looking busy.
+    if (countOf(g, "digger") > 0) {
+      const vk = S.veins[g.col + "," + g.row];
+      if (vk !== undefined && vk <= 0.08) {
+        const bx = cxp, by = p.y + 13 + Math.sin(S.t * 2.2) * 2;
+        cx.globalAlpha = 0.6 + Math.sin(S.t * 2.2) * 0.25;
+        cx.strokeStyle = "#a89b8c"; cx.lineWidth = 2.4; cx.lineCap = "round";
+        cx.beginPath(); cx.arc(bx, by, 7, 0.15, Math.PI - 0.15); cx.stroke();
+        cx.beginPath(); cx.moveTo(bx + 7, by + 1); cx.lineTo(bx + 12, by - 4); cx.stroke();
+        cx.strokeStyle = "#d1553f"; cx.lineWidth = 2.6;
+        cx.beginPath(); cx.moveTo(bx - 9, by - 8); cx.lineTo(bx + 9, by + 8); cx.stroke();
+        cx.globalAlpha = 1;
+      }
+    }
   }
 
   function drawFoe(f) {
     const y = laneY(f.lane) + CELL * 0.56;
     const hop = f.vault !== undefined ? -Math.sin(f.vault * Math.PI) * 44 : 0;
     const bob = Math.sin(f.bob) * (f.type === "scout" ? 3 : 2) + hop;
+    if (f.slowT > 0) {
+      cx.fillStyle = "rgba(154,127,196,.28)";
+      cx.beginPath(); cx.ellipse(f.x, laneY(f.lane) + CELL * 0.78, 17, 5, 0, 0, 6.284); cx.fill();
+    }
     const tint = f.type === "scout" ? "#8d8496" : f.type === "sergeant" ? "#b98a4e"
                : f.type === "leaper" ? "#a9c0d8" : f.type === "pavise" ? "#7e8a9c"
                : f.type === "runner" ? "#d8c9a0" : "#c9ced8";
@@ -1282,6 +1337,16 @@
       cx.fillStyle = flat || "#5a5560";
       cx.fillRect(-9, 26, 6, 8 + Math.sin(f.bob) * 3);
       cx.fillRect(3, 26, 6, 8 - Math.sin(f.bob) * 3);
+      if (f.type === "leaper" && !f.leapt) {
+        cx.strokeStyle = flat || "#8a6234"; cx.lineWidth = 3.4; cx.lineCap = "round";
+        cx.beginPath(); cx.moveTo(-14, -18); cx.lineTo(-2, 30); cx.stroke();
+        cx.fillStyle = flat || "#d8c9a0";
+        cx.beginPath(); cx.rect(-9, 2, 18, 5); cx.fill();
+      }
+      if (f.type === "runner" && !f.bleeding) {
+        cx.fillStyle = flat || "#c2a45e";
+        cx.beginPath(); cx.rect(-11, 2, 22, 4); cx.fill();
+      }
       if (f.type === "pavise" && !f.bleeding) {
         cx.fillStyle = flat || "#5b6472";
         cx.beginPath(); cx.rect(-19, -14, 8, 38); cx.fill();
@@ -1516,7 +1581,17 @@
       });
       cx.globalAlpha = 1;
       cx.save(); cx.translate(s.x, s.y);
-      if (s.kind === "rock") {
+      if (s.kind === "bomb") {
+        cx.rotate(s.spin);
+        cx.fillStyle = "#2b2530";
+        cx.beginPath(); cx.arc(0, 0, 6.5, 0, 6.284); cx.fill();
+        cx.strokeStyle = "#6b5f4a"; cx.lineWidth = 2; cx.lineCap = "round";
+        cx.beginPath(); cx.moveTo(4, -5); cx.lineTo(9, -10); cx.stroke();
+        cx.fillStyle = "#e8c05a";
+        cx.beginPath(); cx.arc(10, -11, 2.4 + Math.sin(S.t * 30) * 0.9, 0, 6.284); cx.fill();
+        cx.fillStyle = "rgba(255,244,214,.5)";
+        cx.beginPath(); cx.arc(-2, -2.4, 2, 0, 6.284); cx.fill();
+      } else if (s.kind === "rock") {
         cx.rotate(s.spin);
         cx.fillStyle = "#c2b39c";
         cx.beginPath(); cx.moveTo(-5, -3.5); cx.lineTo(4, -5); cx.lineTo(6, 2.5); cx.lineTo(-2.5, 5); cx.closePath(); cx.fill();
@@ -1821,57 +1896,6 @@
   });
 
   const pipsEl = document.getElementById("pips");
-  // A workbench you can use mid-fight. Three cheap things, new set every wave, priced
-  // up each time you buy one so it never becomes the only thing you spend on.
-  const forgeEl = document.getElementById("forge");
-  function rollForge() {
-    const pool = [];
-    for (const id in SMALLS) {
-      const sm = SMALLS[id];
-      for (const role of ROSTER) {
-        if (sm.on && !sm.on.includes(role)) continue;
-        if (smallOf(role, id) >= 3) continue;
-        pool.push({ id, role });
-      }
-    }
-    S.forge = [];
-    while (S.forge.length < 3 && pool.length)
-      S.forge.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
-    renderForge();
-  }
-  const forgePrice = o => Math.round(SMALLS[o.id].base * (1 + smallOf(o.role, o.id) * 0.7));
-  function renderForge() {
-    forgeEl.replaceChildren();
-    if (S.over || !S.forge) return;
-    for (const o of S.forge) {
-      const sm = SMALLS[o.id], price = forgePrice(o);
-      const b = document.createElement("button");
-      b.className = "fo"; b.type = "button";
-      b.style.setProperty("--fu", UNITS[o.role].tint);
-      b.disabled = !!o.bought || S.coins < price;
-      b.innerHTML = '<span class="fo-r">' + UNITS[o.role].name + "</span>" +
-                    '<span class="fo-t">' + (o.bought ? "fitted" : sm.name) + "</span>" +
-                    '<span class="fo-c">' + (o.bought ? "&mdash;" : price + " · " + sm.note) + "</span>";
-      b.onclick = () => {
-        const cost = forgePrice(o);
-        if (o.bought || S.coins < cost) { Sound.play("deny"); return; }
-        S.coins -= cost; o.bought = true;
-        SM[o.role] = SM[o.role] || {};
-        SM[o.role][o.id] = (SM[o.role][o.id] || 0) + 1;
-        for (const g of S.goblins) if (g.parts.includes(o.role)) {
-          g.squash = 1.2;
-          const gp = cellOf(g);
-          ring(gp.x + CELL / 2, gp.y + CELL / 2, 60, "rgba(232,192,90,.7)", 3, 0.32);
-          if (o.id === "tough") g.hp = maxHpOf(g);
-        }
-        popText(W / 2, OY - 6, SMALLS[o.id].name.toUpperCase() + " — " + UNITS[o.role].name,
-                "#e8c05a");
-        Sound.play("merge"); kick(4); renderForge(); renderRack();
-      };
-      forgeEl.append(b);
-    }
-  }
-
   function renderPips() {
     pipsEl.innerHTML = "";
     for (let i = 0; i < WAVES.length; i++) {
@@ -1906,7 +1930,7 @@
     muteBtn.textContent = on ? "Sound on" : "Sound off";
     muteBtn.classList.toggle("on", on);
   });
-  function renderAll() { renderRack(); renderPips(); renderInspector(); renderForge(); }
+  function renderAll() { renderRack(); renderPips(); renderInspector(); }
 
   // ====================================================================== loop
   let last = performance.now(), affordSig = null;
@@ -1929,14 +1953,16 @@
       if (el) el.style.height = (S.cool[k] / rechargeOf(k) * 100).toFixed(1) + "%";
     }
     const sig = ROSTER.map(k => (S.coins >= costOf(k)) + ":" + (S.cool[k] > 0)).join("");
-    if (sig !== affordSig) { affordSig = sig; renderRack(); renderForge(); }
+    if (sig !== affordSig) { affordSig = sig; renderRack(); }
     requestAnimationFrame(frame);
   }
 
   window.__hoard = {
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
-    nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, UPGRADES, place: tryPlace,
+    nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, UPGRADES, SMALLS, place: tryPlace,
+    smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
+    smallCount: (role, id) => smallOf(role, id),
     remove: removeGoblin,
     veinAt: (c, r) => S.veins[c + "," + r] === undefined ? 1 : S.veins[c + "," + r],
     get cfg() { return CFG; },
@@ -1953,7 +1979,6 @@
       // did not spend is still in your pocket.
       if (cfg.board && cfg.board.length) {
         for (const b of cfg.board) {
-          if (!laneIsOpen(b.row)) continue;
           const g = { parts: b.parts.slice(), col: b.col, row: b.row, hp: 0, born: -99,
                       age: b.age || 0, cd: 0.5, dcd: 1.2, squash: 0, land: 0,
                       recoil: 0, hurtT: 0, wind: 0 };
@@ -1965,7 +1990,6 @@
       else S.coins = Math.round(START_COINS * (1 + (CFG.chapter - 1) * 0.5));
       if (cfg.veins) S.veins = Object.assign({}, cfg.veins);
       CHAMBER_WAVES = wavesForChamber();
-      rollForge();
       S.bannerText = "CHAMBER " + CFG.chamber + " OF 3";
       S.banner = 2.4;
       const w = WORLDS[CFG.world];
@@ -2301,6 +2325,61 @@
 
   // Three offers between chambers, Mewgenics-ish: each one bends a foreman rather than
   // adding a number, so a run's crew comes out shaped differently every time.
+  // The workbench moved out of the fight and sits here instead, with the rest of the
+  // decisions. Cheap, several of them, and priced up each time you buy the same one.
+  function minorShop(p) {
+    const roles = [...new Set(R.crew.map(g => g.role))];
+    const pool = [];
+    for (const id in V.SMALLS) {
+      const sm = V.SMALLS[id];
+      for (const role of roles) {
+        if (sm.on && !sm.on.includes(role)) continue;
+        pool.push({ id, role });
+      }
+    }
+    const offers = [];
+    while (offers.length < 4 && pool.length)
+      offers.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+    if (!offers.length) return;
+
+    const shop = el("div", "m-panel");
+    shop.append(el("h2", null, "The workbench"));
+    const note = el("p", "m-note");
+    shop.append(note);
+    const c = el("div", "crew");
+    const paint = () => {
+      note.innerHTML = "<b>" + (R.gold || 0) + " gold</b> in hand. "
+        + "Just over half of it comes with you into the next chamber.";
+      [...c.children].forEach((b, i) => {
+        const o = offers[i];
+        b.disabled = o.bought || (R.gold || 0) < o.price;
+        b.querySelector(".gob-kit").textContent = o.bought ? "fitted" : o.price + " gold";
+      });
+    };
+    for (const o of offers) {
+      const sm = V.SMALLS[o.id];
+      o.price = V.smallPrice(o.role, o.id);
+      const b = el("button", "gob");
+      b.style.setProperty("--role", V.UNITS[o.role].tint);
+      b.append(el("span", "gob-role", V.UNITS[o.role].name));
+      b.append(el("span", "gob-name", sm.name));
+      b.append(el("span", "gob-note", sm.note));
+      b.append(el("span", "gob-kit", o.price + " gold"));
+      b.onclick = () => {
+        if (o.bought || (R.gold || 0) < o.price) return;
+        R.gold -= o.price; o.bought = true;
+        R.smalls = R.smalls || {};
+        R.smalls[o.role] = R.smalls[o.role] || {};
+        R.smalls[o.role][o.id] = (R.smalls[o.role][o.id] || 0) + 1;
+        save(); paint();
+      };
+      c.append(b);
+    }
+    shop.append(c);
+    p.append(shop);
+    paint();
+  }
+
   function offerUpgrades(then) {
     const roles = [...new Set(R.crew.map(g => g.role))];
     const pool = [];
@@ -2328,12 +2407,25 @@
       btn.append(el("span", "gob-note", u.note));
       btn.onclick = () => {
         (R.upgrades[o.role] = R.upgrades[o.role] || []).push(o.id);
-        save(); then();
+        save();
       };
       c.append(btn);
     }
     p.append(c);
-    show([p]);
+    const wrap = [p];
+    if (R.chamber < 3) { const shopHost = { append: n => wrap.push(n) }; minorShop(shopHost); }
+    const row = el("div", "m-row");
+    const on = el("button", "btn on", "Take it and go on");
+    on.disabled = true;
+    row.append(on);
+    // the free pick is compulsory; the shop is not
+    for (const btn of c.children) btn.addEventListener("click", () => {
+      [...c.children].forEach(x => x.disabled = true);
+      on.disabled = false;
+    });
+    on.onclick = () => then();
+    wrap.push(row);
+    show(wrap);
   }
 
   function chamberDone(won, goldLeft, board, veins, smalls) {
@@ -2348,7 +2440,7 @@
         // small wage so a wiped-out lane can be answered
         R.board = board;
         R.veins = veins;
-        R.gold = Math.min(goldLeft, 180) + 70;
+        R.gold = Math.round(goldLeft * 0.55) + 60;
         save(); return chapterMap();
       }
       // new ground next chapter — but the purse stays until the chapter-end forge has
@@ -2384,7 +2476,7 @@
       for (const role of roles) {
         if (R.upgrades[role] && R.upgrades[role].includes(id)) continue;
         if (u.on[0] !== "*" && !u.on.includes(role)) continue;
-        big.push({ id, role, cost: u.on[0] === "*" ? 420 : 340 });
+        big.push({ id, role, cost: u.on[0] === "*" ? 780 : 640 });
       }
     }
     if (big.length) {
