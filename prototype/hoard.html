@@ -49,6 +49,18 @@
 
 
   .rack { display: flex; gap: 9px; flex-wrap: wrap; }
+  .forge { display: flex; gap: 7px; flex-wrap: wrap; align-items: stretch; }
+  .forge:empty { display: none; }
+  .fo { flex: 1 1 130px; min-width: 118px; display: flex; flex-direction: column; gap: 1px;
+        background: #1d1822; border: 1px dashed #4a4150; border-left: 3px solid var(--fu, #8a7134);
+        border-radius: 3px; padding: 6px 9px; color: var(--ink); font-family: var(--body);
+        text-align: left; cursor: pointer; transition: transform .1s, filter .12s; }
+  .fo:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.2); }
+  .fo:disabled { opacity: .34; cursor: not-allowed; }
+  .fo-t { font-size: 12px; font-weight: 700; }
+  .fo-r { font-family: var(--data); font-size: 9.5px; letter-spacing: .07em;
+          text-transform: uppercase; color: var(--fu, #8a7134); }
+  .fo-c { font-family: var(--data); font-size: 11px; color: var(--gold); }
   .card { flex: 1 1 150px; min-width: 132px;
           display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
           background: linear-gradient(180deg, var(--stone-lit), var(--stone));
@@ -199,6 +211,7 @@
     <canvas id="board" width="788" height="542"
       aria-label="Five lanes, seven columns. Goblins defend the caravan on the left from heroes entering on the right."></canvas>
     <div class="rack" id="rack"></div>
+    <div class="forge" id="forge"></div>
   </div>
 
   <div class="insp" id="insp">
@@ -383,6 +396,19 @@
     cheap:     { name: "Cut-Rate",    on: ["*"],       note: "Costs a third less." },
     quick:     { name: "Quick Hands", on: ["*"],       note: "Recharges twice as fast." },
   };
+  // Bought with gold, mid-chamber, and they stack. Small and numeric on purpose — the
+  // between-chamber picks are the ones that change how a goblin behaves.
+  const SMALLS = {
+    sharp: { name: "Sharper", note: "+7 damage", base: 55 },
+    tough: { name: "Tougher", note: "+30% hide", base: 50 },
+    hands: { name: "Quicker", note: "-18% recharge", base: 60 },
+    rich:  { name: "Richer",  note: "+25% take", base: 65, on: ["digger"] },
+    thrift:{ name: "Thrifty", note: "-8 gold to place", base: 70 },
+  };
+  let SM = {};                        // role -> { id: timesBought }
+  const smallOf = (role, id) => (SM[role] && SM[role][id]) || 0;
+  const gobSmall = (g, id) => g.parts.reduce((a, t) => Math.max(a, smallOf(t, id)), 0);
+
   // role -> list of upgrade ids, set by the meta layer before each chamber
   let UPS = {};
   const hasUp = (role, id) => !!(UPS[role] && UPS[role].indexOf(id) >= 0);
@@ -391,8 +417,10 @@
 
   const MAX_PARTS = 3;
 
-  const costOf = k => Math.round(UNITS[k].cost * (hasUp(k, "cheap") ? 0.66 : 1));
-  const rechargeOf = k => UNITS[k].recharge * (hasUp(k, "quick") ? 0.5 : 1);
+  const costOf = k => Math.max(15, Math.round(UNITS[k].cost * (hasUp(k, "cheap") ? 0.66 : 1))
+                                    - smallOf(k, "thrift") * 8);
+  const rechargeOf = k => UNITS[k].recharge * (hasUp(k, "quick") ? 0.5 : 1)
+                          * Math.pow(0.82, smallOf(k, "hands"));
 
   const partsKey = g => [...g.parts].sort().join("+");
   const countOf = (g, t) => g.parts.filter(x => x === t).length;
@@ -403,21 +431,48 @@
     "chucker+chucker": "Bowpair",
     "chucker+chucker+chucker": "Ballista Crew",
     "barricade+chucker": "Bunker",
-    "chucker+digger": "Tollkeeper",
+    "chucker+digger": "Coinsmith",
     "barricade+digger": "Strongbox",
     "digger+digger": "Deep Shaft",
     "barricade+barricade": "Bulwark",
     "barricade+chucker+chucker": "Bastion",
     "barricade+barricade+chucker": "Redoubt",
     "barricade+chucker+digger": "Toll Fort",
-    "chucker+chucker+digger": "Mint",
+    "chucker+chucker+digger": "Mint Guard",
     "chucker+digger+digger": "Prospector's Guard",
     "barricade+digger+digger": "Vault",
     "barricade+barricade+digger": "Counting House",
     "digger+digger+digger": "Delve",
     "barricade+barricade+barricade": "Great Wall",
   };
-  const nameOf = g => FUSION[partsKey(g)] || g.parts.map(x => UNITS[x].name[0]).join("");
+  // Anything the hand-written table does not cover gets built rather than initialled.
+  // The part you have most of supplies the noun; the rest supply adjectives. So a
+  // Barricade with a Sapper in it is a Shored Bulwark, not "BS".
+  const PURE = {
+    chucker:  ["Chucker", "Bowpair", "Ballista Crew"],
+    digger:   ["Digger", "Deep Shaft", "Delve"],
+    barricade:["Barricade", "Bulwark", "Great Wall"],
+    sapper:   ["Sapper", "Shoring Gang", "Tunnel Crew"],
+    tollkeep: ["Tollkeeper", "Toll Pair", "Toll House"],
+    keg:      ["Powder Keg", "Twin Charge", "Powder Store"],
+    hollerer: ["Hollerer", "Shouting Match", "Riot"],
+  };
+  const EPITHET = {
+    chucker: "Armed", digger: "Digging", barricade: "Bolted", sapper: "Shored",
+    tollkeep: "Gilded", keg: "Primed", hollerer: "Bellowing",
+  };
+  function nameOf(g) {
+    const named = FUSION[partsKey(g)];
+    if (named) return named;
+    const count = {};
+    for (const t of g.parts) count[t] = (count[t] || 0) + 1;
+    const order = Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b));
+    const base = order[0];
+    const noun = (PURE[base] || [UNITS[base].name])[Math.min(count[base], 3) - 1]
+                 || UNITS[base].name;
+    const pre = order.slice(1).map(t => EPITHET[t] || UNITS[t].name).join(" ");
+    return pre ? pre + " " + noun : noun;
+  }
 
   // A Digger's take is a function of how far forward you put it. No tiles, no lottery:
   // the gradient is continuous and the choice is entirely yours.
@@ -515,7 +570,8 @@
   const gobAt = (c, r) => S.goblins.find(g => g.col === c && g.row === r && g.hp > 0);
   const maxHpOf = g => g.parts.reduce((a, t) => a + UNITS[t].hp, 0)
                        * (g.parts.length > 1 ? 0.72 : 1)
-                       * (gobHas(g, "braced") ? 1.5 : 1);
+                       * (gobHas(g, "braced") ? 1.5 : 1)
+                       * (1 + 0.3 * gobSmall(g, "tough"));
   const spentOn = g => g.parts.reduce((a, t) => a + UNITS[t].cost, 0);
   function tintOf(g) {
     if (g.parts.length === 1) return UNITS[g.parts[0]].tint;
@@ -590,7 +646,7 @@
     S.phase = "fight"; S.phaseT = 0;
     S.bannerText = "WAVE " + (S.waveIx + 1) + " — " + w.name.toUpperCase();
     S.banner = 2.1;
-    Sound.play("wave"); kick(2.5); renderPips();
+    Sound.play("wave"); kick(2.5); renderPips(); rollForge();
   }
 
   function chooseLane() {
@@ -629,7 +685,7 @@
         { colors: ["#e8c05a", "#fff3cf", "#8ed07a"], spread: 320 }), i * 170);
     if (onChamberEnd)
       setTimeout(() => onChamberEnd(true, Math.round(S.coins), survivors(),
-                                    Object.assign({}, S.veins)), 1500);
+                                    Object.assign({}, S.veins), SM), 1500);
   }
   function defeat() {
     if (S.over) return;
@@ -754,6 +810,7 @@
           if (gobHas(g, "sling"))     spec = { ...spec, cd: spec.cd * 0.5,
                                                dmg: Math.round(spec.dmg * 0.55) };
           if (gobHas(g, "ricochet"))  spec = { ...spec, pierce: Math.max(spec.pierce, 1) };
+          spec = { ...spec, dmg: spec.dmg + 7 * gobSmall(g, "sharp") };
           g.cd = spec.cd;
           S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
                          dmg: spec.dmg, pierce: spec.pierce, kind: spec.kind, trail: [], spin: 0 });
@@ -811,7 +868,8 @@
         if (S.veins[vk] === undefined) S.veins[vk] = 1;
         const left = S.veins[vk];
         // Prospector cashes in on fresh ground, which pushes you to keep moving
-        const rich = gobHas(g, "prospect") && left > 0.92 ? 3 : 1;
+        const rich = (gobHas(g, "prospect") && left > 0.92 ? 3 : 1)
+                     * (1 + 0.25 * gobSmall(g, "rich"));
         const take = Math.max(0, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85)
                                             * rot * left * rich));
         rate += take / DIG_EVERY;
@@ -1763,6 +1821,57 @@
   });
 
   const pipsEl = document.getElementById("pips");
+  // A workbench you can use mid-fight. Three cheap things, new set every wave, priced
+  // up each time you buy one so it never becomes the only thing you spend on.
+  const forgeEl = document.getElementById("forge");
+  function rollForge() {
+    const pool = [];
+    for (const id in SMALLS) {
+      const sm = SMALLS[id];
+      for (const role of ROSTER) {
+        if (sm.on && !sm.on.includes(role)) continue;
+        if (smallOf(role, id) >= 3) continue;
+        pool.push({ id, role });
+      }
+    }
+    S.forge = [];
+    while (S.forge.length < 3 && pool.length)
+      S.forge.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+    renderForge();
+  }
+  const forgePrice = o => Math.round(SMALLS[o.id].base * (1 + smallOf(o.role, o.id) * 0.7));
+  function renderForge() {
+    forgeEl.replaceChildren();
+    if (S.over || !S.forge) return;
+    for (const o of S.forge) {
+      const sm = SMALLS[o.id], price = forgePrice(o);
+      const b = document.createElement("button");
+      b.className = "fo"; b.type = "button";
+      b.style.setProperty("--fu", UNITS[o.role].tint);
+      b.disabled = !!o.bought || S.coins < price;
+      b.innerHTML = '<span class="fo-r">' + UNITS[o.role].name + "</span>" +
+                    '<span class="fo-t">' + (o.bought ? "fitted" : sm.name) + "</span>" +
+                    '<span class="fo-c">' + (o.bought ? "&mdash;" : price + " · " + sm.note) + "</span>";
+      b.onclick = () => {
+        const cost = forgePrice(o);
+        if (o.bought || S.coins < cost) { Sound.play("deny"); return; }
+        S.coins -= cost; o.bought = true;
+        SM[o.role] = SM[o.role] || {};
+        SM[o.role][o.id] = (SM[o.role][o.id] || 0) + 1;
+        for (const g of S.goblins) if (g.parts.includes(o.role)) {
+          g.squash = 1.2;
+          const gp = cellOf(g);
+          ring(gp.x + CELL / 2, gp.y + CELL / 2, 60, "rgba(232,192,90,.7)", 3, 0.32);
+          if (o.id === "tough") g.hp = maxHpOf(g);
+        }
+        popText(W / 2, OY - 6, SMALLS[o.id].name.toUpperCase() + " — " + UNITS[o.role].name,
+                "#e8c05a");
+        Sound.play("merge"); kick(4); renderForge(); renderRack();
+      };
+      forgeEl.append(b);
+    }
+  }
+
   function renderPips() {
     pipsEl.innerHTML = "";
     for (let i = 0; i < WAVES.length; i++) {
@@ -1797,7 +1906,7 @@
     muteBtn.textContent = on ? "Sound on" : "Sound off";
     muteBtn.classList.toggle("on", on);
   });
-  function renderAll() { renderRack(); renderPips(); renderInspector(); }
+  function renderAll() { renderRack(); renderPips(); renderInspector(); renderForge(); }
 
   // ====================================================================== loop
   let last = performance.now(), affordSig = null;
@@ -1820,7 +1929,7 @@
       if (el) el.style.height = (S.cool[k] / rechargeOf(k) * 100).toFixed(1) + "%";
     }
     const sig = ROSTER.map(k => (S.coins >= costOf(k)) + ":" + (S.cool[k] > 0)).join("");
-    if (sig !== affordSig) { affordSig = sig; renderRack(); }
+    if (sig !== affordSig) { affordSig = sig; renderRack(); renderForge(); }
     requestAnimationFrame(frame);
   }
 
@@ -1836,6 +1945,7 @@
       CFG = Object.assign({ world: null, chapter: 1, chamber: 1 }, cfg);
       ROSTER = cfg.roles && cfg.roles.length ? cfg.roles.slice() : ROSTER;
       UPS = cfg.upgrades || {};
+      SM = cfg.smalls ? JSON.parse(JSON.stringify(cfg.smalls)) : {};
       onChamberEnd = done;
       newRun();
       // A chapter is one continuous defence. Whatever lived through the last chamber is
@@ -1855,6 +1965,7 @@
       else S.coins = Math.round(START_COINS * (1 + (CFG.chapter - 1) * 0.5));
       if (cfg.veins) S.veins = Object.assign({}, cfg.veins);
       CHAMBER_WAVES = wavesForChamber();
+      rollForge();
       S.bannerText = "CHAMBER " + CFG.chamber + " OF 3";
       S.banner = 2.4;
       const w = WORLDS[CFG.world];
@@ -2130,7 +2241,7 @@
 
   function begin() {
     R = { world: chosenWorld, chapter: 1, chamber: 1, scrip: 0, crew: picked.slice(),
-          upgrades: {}, board: null, gold: undefined, veins: null, cleared: false };
+          upgrades: {}, smalls: {}, board: null, gold: undefined, veins: null, cleared: false };
     for (const g of R.crew) g.runs++;
     save(); chapterMap();
   }
@@ -2184,7 +2295,8 @@
     window.scrollTo(0, 0);
     V.begin({ world: R.world, chapter: R.chapter, chamber: R.chamber,
               roles: R.crew.map(g => g.role), upgrades: R.upgrades,
-              board: R.board, carryGold: R.gold, veins: R.veins }, chamberDone);
+              board: R.board, carryGold: R.gold, veins: R.veins,
+              smalls: R.smalls }, chamberDone);
   }
 
   // Three offers between chambers, Mewgenics-ish: each one bends a foreman rather than
@@ -2224,7 +2336,9 @@
     show([p]);
   }
 
-  function chamberDone(won, goldLeft, board, veins) {
+  function chamberDone(won, goldLeft, board, veins, smalls) {
+    R.smalls = smalls || R.smalls;
+    R.gold = goldLeft;
     if (!won) return lost();
     R.scrip += (1 + Math.round(goldLeft / 400)) * R.chapter;
     const onward = () => {
@@ -2237,8 +2351,9 @@
         R.gold = Math.min(goldLeft, 180) + 70;
         save(); return chapterMap();
       }
-      // a new chapter is new ground — fresh board, starting purse
-      R.board = null; R.gold = undefined; R.veins = null;
+      // new ground next chapter — but the purse stays until the chapter-end forge has
+      // had its go at it, since that is the last thing this gold can ever buy
+      R.board = null; R.veins = null;
       return chapterCleared();
     };
     offerUpgrades(onward);
@@ -2259,6 +2374,58 @@
       u.innerHTML = "<b style='color:var(--gold)'>" + got.join(", ") + " joined the warren.</b>";
       p.append(u);
     }
+    // Gold is wiped when a chapter ends, so this is the one place it buys something
+    // fundamental. Expensive on purpose.
+    const purse = R.gold || 0;
+    const roles = [...new Set(R.crew.map(g => g.role))];
+    const big = [];
+    for (const id in V.UPGRADES) {
+      const u = V.UPGRADES[id];
+      for (const role of roles) {
+        if (R.upgrades[role] && R.upgrades[role].includes(id)) continue;
+        if (u.on[0] !== "*" && !u.on.includes(role)) continue;
+        big.push({ id, role, cost: u.on[0] === "*" ? 420 : 340 });
+      }
+    }
+    if (big.length) {
+      const shop = el("div", "m-panel");
+      shop.append(el("h2", null, "The forge, before you go up"));
+      const sn = el("p", "m-note");
+      sn.innerHTML = "<b>" + purse + " gold</b> in hand. It does not survive the climb.";
+      shop.append(sn);
+      const sc = el("div", "crew");
+      const offers = [];
+      while (offers.length < 3 && big.length)
+        offers.push(big.splice((Math.random() * big.length) | 0, 1)[0]);
+      const paint = () => {
+        [...sc.children].forEach((b, i) => {
+          const o = offers[i];
+          b.disabled = o.bought || (R.gold || 0) < o.cost;
+          b.querySelector(".gob-kit").textContent = o.bought ? "fitted" : o.cost + " gold";
+        });
+        sn.innerHTML = "<b>" + (R.gold || 0) + " gold</b> in hand. It does not survive the climb.";
+      };
+      for (const o of offers) {
+        const u = V.UPGRADES[o.id];
+        const b = el("button", "gob");
+        b.style.setProperty("--role", V.UNITS[o.role].tint);
+        b.append(el("span", "gob-role", V.UNITS[o.role].name));
+        b.append(el("span", "gob-name", u.name));
+        b.append(el("span", "gob-note", u.note));
+        b.append(el("span", "gob-kit", o.cost + " gold"));
+        b.onclick = () => {
+          if (o.bought || (R.gold || 0) < o.cost) return;
+          R.gold -= o.cost; o.bought = true;
+          (R.upgrades[o.role] = R.upgrades[o.role] || []).push(o.id);
+          save(); paint();
+        };
+        sc.append(b);
+      }
+      shop.append(sc);
+      p.append(shop);
+      paint();
+    }
+
     const row = el("div", "m-row");
     const out = el("button", "btn on", "Walk out with it"); out.onclick = bank;
     if (R.chapter < CHAPTERS_PER_WORLD) {
