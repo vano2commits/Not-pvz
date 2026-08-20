@@ -181,6 +181,14 @@
             text-transform: uppercase; color: var(--ink-dim); }
   .step-n { font-family: var(--display); font-size: 15px; text-transform: uppercase; }
   .m-row { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+  .roster { display: flex; gap: 7px; flex-wrap: wrap; }
+  .tile { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 9px;
+          background: var(--stone); border: 1px solid #3b3340;
+          border-left: 3px solid var(--role, var(--gold-dim)); border-radius: 3px; }
+  .tile b { font-size: 12.5px; font-weight: 700; }
+  .tile i { font-family: var(--data); font-size: 10.5px; font-style: normal;
+            color: var(--ink-dim); }
+  .m-panel h2 + .m-note { margin-top: -4px; }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -2083,9 +2091,10 @@
       const s2 = el("span", "readout-value" + (cls ? " " + cls : ""), String(v));
       d.append(s2); b.append(d); };
     stat("Scrip", M.scrip, "gold");
-    stat("Carried", R ? R.scrip : 0);
+    if (R) stat("Carried", R.scrip, "risk");
     stat("Warren", M.warren.length);
-    stat("Depth", R ? "Ch " + R.chapter + " · " + R.chamber + "/3" : "—");
+    if (R) stat("Depth", R.chapter + "-" + R.chamber, "gold");
+    else stat("Cleared", Object.keys(M.cleared || {}).length + "/3");
     const sp = el("span"); sp.style.marginLeft = "auto";
     const wipe = el("button", "btn", "Wipe save");
     wipe.onclick = () => { if (confirm("Wipe the save?")) {
@@ -2100,44 +2109,59 @@
   }
 
   // ------------------------------------------------------------------ warren
+  // ---------------------------------------------------------------- home
+  // One screen, three jobs: where you can go, what you can spend on, and who you have.
+  // It used to be a roster with a button that opened a list with a button.
   function warren() {
     R = null;
-    const p = el("div", "m-panel");
-    p.append(el("h2", null, "The Warren"));
+    const out = [];
 
-    const c = el("div", "crew");
-    for (const g of M.warren) {
-      const b = el("button", "gob");
-      b.style.setProperty("--role", V.UNITS[g.role].tint);
-      b.append(el("span", "gob-role", V.UNITS[g.role].name));
-      b.append(el("span", "gob-name", g.name));
-      b.append(el("span", "gob-note", ROLES[g.role].note));
-      if (g.runs) b.append(el("span", "gob-runs", g.runs + "×"));
-      b.disabled = true;
-      c.append(b);
+    // 1. the decision, first and largest
+    const wp = el("div", "m-panel");
+    wp.append(el("h2", null, "Where to"));
+    const ws = el("div", "worlds");
+    for (const key in V.WORLDS) {
+      const w = V.WORLDS[key];
+      const b = el("button", "world");
+      const done = M.cleared && M.cleared[key];
+      const deep = M.deepest[key] || 0;
+      const head = el("span", "world-tier");
+      head.textContent = "Tier " + w.tier + " · " + CHAPTERS_PER_WORLD + " chapters"
+        + (done ? " · cleared" : deep ? " · reached " + deep : "");
+      if (done) head.style.color = "var(--goblin)";
+      b.append(head);
+      b.append(el("span", "world-name", w.name));
+      b.append(el("span", "world-rule", w.rule));
+      const known = M.unlocked.includes(w.answer);
+      const f = el("span", "world-fix",
+        (known ? "✓ " : "✦ meets you there · ") + V.UNITS[w.answer].name);
+      if (!known) f.style.color = "var(--gold)";
+      b.append(f);
+      // straight to packing — no confirmation step in between
+      b.onclick = () => { chosenWorld = key; meetLocal(key); muster(); };
+      ws.append(b);
     }
-    p.append(c);
+    wp.append(ws);
+    out.push(wp);
 
-    const panels = [p];
+    // 2. the only thing scrip is for
     const buyable = BENCH.filter(x => !M.unlocked.includes(x.role));
     if (buyable.length) {
       const lp = el("div", "m-panel");
-      lp.append(el("h2", null, "The bench"));
+      const h = el("h2", null, "The bench");
+      lp.append(h);
       const lc = el("div", "crew");
       for (const x of buyable) {
         const b = el("button", "gob");
         b.style.setProperty("--role", V.UNITS[x.role].tint);
-        b.append(el("span", "gob-role", V.UNITS[x.role].name));
-        const price = el("span", "gob-name", x.cost + " scrip");
-        price.style.color = M.scrip >= x.cost ? "var(--gold)" : "var(--ink-dim)";
-        b.append(price);
+        b.append(el("span", "gob-role", "Bench"));
+        b.append(el("span", "gob-name", V.UNITS[x.role].name));
         b.append(el("span", "gob-note", ROLES[x.role].note));
-        if (ROLES[x.role].meets) {
-          const free = el("span", "gob-note",
-            "or free in " + V.WORLDS[ROLES[x.role].meets].name);
-          free.style.color = "var(--goblin)";
-          b.append(free);
-        }
+        const free = ROLES[x.role].meets
+          ? "or free in " + V.WORLDS[ROLES[x.role].meets].name : "";
+        if (free) { const fr = el("span", "gob-note", free);
+                    fr.style.color = "var(--goblin)"; b.append(fr); }
+        b.append(el("span", "gob-kit", x.cost + " scrip"));
         b.disabled = M.scrip < x.cost;
         b.onclick = () => {
           if (M.scrip < x.cost) return;
@@ -2147,113 +2171,77 @@
         };
         lc.append(b);
       }
-      lp.append(lc); panels.push(lp);
+      lp.append(lc); out.push(lp);
     }
-    const row = el("div", "m-row");
-    const go = el("button", "btn on", "Pick a world");
-    go.onclick = worlds; row.append(go); panels.push(row);
-    show(panels);
+
+    // 3. who lives here, as a quiet strip rather than the main event
+    const rp = el("div", "m-panel");
+    rp.append(el("h2", null, "The warren"));
+    const strip = el("div", "roster");
+    const byRole = {};
+    for (const g of M.warren) (byRole[g.role] = byRole[g.role] || []).push(g);
+    for (const role in byRole) {
+      const t = el("span", "tile");
+      t.style.setProperty("--role", V.UNITS[role].tint);
+      t.append(el("b", null, V.UNITS[role].name));
+      t.append(el("i", null, "×" + byRole[role].length));
+      strip.append(t);
+    }
+    rp.append(strip); out.push(rp);
+    show(out);
   }
 
-  // ------------------------------------------------------------------ muster
+  // ---------------------------------------------------------------- muster
+  let chosenWorld = null;
   let picked = [];
   const CREW_MAX = 5;
   function muster() {
     picked = [];
     const w = V.WORLDS[chosenWorld];
     const p = el("div", "m-panel");
-    p.append(el("h2", null, "Pack for " + w.name));
-    const n = el("p", "m-note");
-    n.innerHTML = "<b>" + w.rule + "</b> " + w.fix;
-    p.append(n);
+    p.append(el("h2", null, w.name));
 
-    const seen = {}, c = el("div", "crew"), count = el("p", "m-note");
+    const rule = el("p", "m-note");
+    rule.innerHTML = "<b>" + w.rule + "</b>";
+    p.append(rule);
+
+    const seen = {}, c = el("div", "crew");
     const uniq = M.warren.filter(g => seen[g.role] ? false : (seen[g.role] = 1));
+    const go = el("button", "btn on", "Descend");
     const redraw = () => {
-      count.innerHTML = picked.length + " of " + CREW_MAX + " — <b>"
-        + (picked.map(g => V.UNITS[g.role].name).join(", ") || "nobody") + "</b>";
       [...c.children].forEach((b, i) => {
         b.classList.toggle("picked", picked.includes(uniq[i]));
         b.disabled = !picked.includes(uniq[i]) && picked.length >= CREW_MAX;
       });
-      next.disabled = picked.length === 0;
+      go.disabled = !picked.length;
+      go.textContent = picked.length ? "Descend with " + picked.length : "Pick your crew";
     };
     for (const g of uniq) {
       const b = el("button", "gob");
       b.style.setProperty("--role", V.UNITS[g.role].tint);
       b.append(el("span", "gob-role", V.UNITS[g.role].name + " · " + V.UNITS[g.role].cost + "g"));
-      b.append(el("span", "gob-name", g.name));
-      b.append(el("span", "gob-note", ROLES[g.role].note));
+      b.append(el("span", "gob-name", ROLES[g.role].note));
       if (V.UNITS[g.role].answers === chosenWorld) {
-        const tag = el("span", "gob-note", "✦ answers " + V.WORLDS[chosenWorld].name);
-        tag.style.color = "var(--gold)";
+        const tag = el("span", "gob-kit", "✦ answers " + w.name);
         b.append(tag);
       }
-      b.onclick = () => { const i = picked.indexOf(g);
+      b.onclick = () => {
+        const i = picked.indexOf(g);
         if (i >= 0) picked.splice(i, 1); else if (picked.length < CREW_MAX) picked.push(g);
-        redraw(); };
+        redraw();
+      };
       c.append(b);
     }
-    p.append(c, count);
+    p.append(c);
+
     const row = el("div", "m-row");
-    const back = el("button", "btn", "Back"); back.onclick = worlds;
-    const next = el("button", "btn on", "Go down"); next.onclick = begin;
-    row.append(back, next);
+    const back = el("button", "btn", "Back"); back.onclick = warren;
+    go.onclick = () => { begin(); enterChamber(); };
+    row.append(back, go);
     show([p, row]); redraw();
   }
 
-  // ------------------------------------------------------------------ worlds
-  let chosenWorld = null;
-  function worlds() {
-    R = null;
-    const p = el("div", "m-panel");
-    p.append(el("h2", null, "Where to"));
-
-    const ws = el("div", "worlds");
-    for (const key in V.WORLDS) {
-      const w = V.WORLDS[key];
-      const b = el("button", "world");
-      const done = M.cleared && M.cleared[key];
-      b.append(el("span", "world-tier",
-        "Tier " + w.tier + " · " + CHAPTERS_PER_WORLD + " chapters" + (done ? " · CLEARED" : "")));
-      b.append(el("span", "world-name", w.name));
-      b.append(el("span", "world-rule", w.rule));
-      const known = M.unlocked.includes(w.answer);
-      const f = el("span", "world-fix",
-        (known ? "✓ in the warren — " : "✦ meets you there — ") + w.fix);
-      if (!known) f.style.color = "var(--gold)";
-      b.append(f);
-      b.onclick = () => {
-        chosenWorld = key;
-        const joined = meetLocal(key);
-        if (joined) return greeting(joined, w);
-        muster();
-      };
-      ws.append(b);
-    }
-    p.append(ws);
-    const row = el("div", "m-row");
-    const back = el("button", "btn", "Back"); back.onclick = warren;
-    row.append(back);
-    show([p, row]);
-  }
-
-  // The counter arrives with the problem, never after it. Gating a world's answer
-  // behind clearing that world made the first trip unanswerable by construction.
-  function greeting(name, w) {
-    const p = el("div", "m-panel");
-    p.append(el("h2", null, "Somebody is waiting at the mouth"));
-    const n = el("p", "m-note");
-    n.innerHTML = "<b style='color:var(--gold)'>" + name + "</b> &mdash; " + w.fix;
-    p.append(n);
-
-    const row = el("div", "m-row");
-    const b = el("button", "btn on", "Pack for it"); b.onclick = muster;
-    row.append(b);
-    show([p, row]);
-  }
-
-  // ------------------------------------------------------------------ the run
+  // The world hands you its answer the first time you go there, permanently.
   function meetLocal(world) {
     const role = V.WORLDS[world].answer;
     if (M.unlocked.includes(role)) return null;
@@ -2267,51 +2255,7 @@
     R = { world: chosenWorld, chapter: 1, chamber: 1, scrip: 0, crew: picked.slice(),
           upgrades: {}, smalls: {}, board: null, gold: undefined, veins: null, cleared: false };
     for (const g of R.crew) g.runs++;
-    save(); chapterMap();
-  }
-
-  function chapterMap() {
-    const w = V.WORLDS[R.world];
-    const p = el("div", "m-panel");
-    p.append(el("h2", null, "Chapter " + R.chapter + " of " + CHAPTERS_PER_WORLD
-                            + " — " + w.name));
-    const n = el("p", "m-note");
-    const have = R.crew.some(g => g.role === w.answer);
-    n.innerHTML = "<b>" + w.rule + "</b> " + (have
-      ? "<span style='color:var(--goblin)'>You brought the answer.</span>"
-      : "<span style='color:var(--alarm)'>Nobody here answers this.</span>");
-    p.append(n);
-    const st = el("div", "steps");
-    for (let i = 1; i <= 3; i++) {
-      const d = el("div", "step" + (i === R.chamber ? " now" : i < R.chamber ? " done" : ""));
-      d.append(el("span", "step-k", "Chamber " + i));
-      d.append(el("span", "step-n", i < R.chamber ? "cleared" : i === R.chamber ? "next" : "—"));
-      st.append(d);
-    }
-    p.append(st);
-    if (R.board && R.board.length) {
-      const st2 = el("p", "m-note");
-      st2.innerHTML = "<b>" + R.board.length + "</b> still standing from last chamber, "
-        + "and <b>" + (R.gold || 0) + "</b> gold in hand.";
-      p.append(st2);
-    }
-    const owned = Object.entries(R.upgrades || {});
-    if (owned.length) {
-      const line = el("div", "crew");
-      for (const [role, ids] of owned) for (const id of ids) {
-        const d = el("div", "gob");
-        d.style.setProperty("--role", V.UNITS[role].tint);
-        d.append(el("span", "gob-role", V.UNITS[role].name));
-        d.append(el("span", "gob-name", V.UPGRADES[id].name));
-        d.append(el("span", "gob-note", V.UPGRADES[id].note));
-        line.append(d);
-      }
-      p.append(line);
-    }
-    const row = el("div", "m-row");
-    const go = el("button", "btn on", "Go in");
-    go.onclick = enterChamber; row.append(go);
-    show([p, row]);
+    save();
   }
 
   function enterChamber() {
@@ -2420,35 +2364,56 @@
     R.gold = goldLeft;
     if (!won) return lost();
     R.scrip += (1 + Math.round(goldLeft / 400)) * R.chapter;
-    const onward = () => {
-      if (R.chamber < 3) {
-        R.chamber++;
-        // the chapter continues: keep what lived and what you did not spend, plus a
-        // small wage so a wiped-out lane can be answered
-        R.board = board;
-        R.veins = veins;
-        R.gold = Math.round(goldLeft * 0.55) + 60;
-        save(); return chapterMap();
-      }
-      // new ground next chapter — but the purse stays until the chapter-end forge has
-      // had its go at it, since that is the last thing this gold can ever buy
+
+    // The last chamber of a chapter goes straight to the chapter screen — the workbench
+    // is there too, as the bigger forge, so stopping at both would be a screen for
+    // nothing.
+    if (R.chamber >= 3) {
       R.board = null; R.veins = null;
       return chapterCleared();
-    };
-    betweenChambers(onward);
+    }
+    betweenChambers(() => {
+      R.chamber++;
+      // the chapter continues: keep what lived and what you did not spend, plus a
+      // small wage so a wiped-out lane can be answered
+      R.board = board;
+      R.veins = veins;
+      R.gold = Math.round(goldLeft * 0.55) + 60;
+      save();
+    });
   }
 
   // One screen between chambers: the workbench. Minor things, bought with gold.
   function betweenChambers(then) {
-    const p = el("div", "m-panel");
-    p.append(el("h2", null, "Chamber " + (R.chamber - 1) + " held"));
     const host = [];
+    const p = el("div", "m-panel");
+    p.append(el("h2", null, "Chamber " + R.chamber + " of 3 held"));
+    const st = el("p", "m-note");
+    st.innerHTML = (R.board && R.board.length
+      ? "<b>" + R.board.length + "</b> still standing. " : "")
+      + "Chamber " + (R.chamber + 1) + " asks more.";
+    p.append(st);
+    const owned = Object.entries(R.upgrades || {});
+    if (owned.length) {
+      const line = el("div", "roster");
+      for (const [role, ids] of owned) for (const id of ids) {
+        const t = el("span", "tile");
+        t.style.setProperty("--role", V.UNITS[role].tint);
+        t.append(el("b", null, V.UPGRADES[id].name));
+        t.append(el("i", null, V.UNITS[role].name));
+        line.append(t);
+      }
+      p.append(line);
+    }
+    host.push(p);
     minorShop({ append: n => host.push(n) });
     const row = el("div", "m-row");
-    const on = el("button", "btn on", "On to the next");
-    on.onclick = () => then();
+    const on = el("button", "btn on", "Into chamber " + (R.chamber + 1));
+    // straight back into the fight — this used to hand off to a map with one button
+    on.onclick = () => { then(); enterChamber(); };
     row.append(on);
-    show(host.length ? host.concat([row]) : [p, row]);
+    host.push(row);
+    show(host);
   }
 
   function chapterCleared() {
@@ -2525,7 +2490,7 @@
         "Deeper (" + (R.chapter + 1) + " of " + CHAPTERS_PER_WORLD + ")");
       down.onclick = () => {
         R.chapter++; R.chamber = 1; R.board = null; R.gold = undefined; R.veins = null; save();
-        chapterMap();
+        enterChamber();
       };
       row.append(out, down);
     } else {
@@ -2582,7 +2547,7 @@
   }
 
   window.__meta = { get run() { return R; }, get meta() { return M; },
-                    warren, muster, worlds, begin, enterChamber };
+                    warren, muster, begin, enterChamber };
   load(); warren();
 })();
 </script>
