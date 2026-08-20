@@ -45,6 +45,11 @@
   canvas { display: block; width: 100%; max-width: 900px; height: auto; aspect-ratio: 788 / 542;
            border: 1px solid #3b3340; border-radius: 4px; background: var(--cave);
            cursor: pointer; touch-action: none; margin: 0 auto; }
+  /* The "white flash on select" was never a draw call: tapping the board let the browser
+     paint its own tap-highlight and drag-select the page, washing the whole canvas in the
+     UA's blue. Kill both everywhere — nothing on this page is meant to be selected. */
+  * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+      -webkit-user-select: none; user-select: none; }
   .play { display: flex; flex-direction: column; gap: 12px; }
 
 
@@ -451,8 +456,10 @@
 
   const MAX_PARTS = 3;
 
-  const costOf = k => Math.max(15, Math.round(UNITS[k].cost * (hasUp(k, "cheap") ? 0.66 : 1))
-                                    - smallOf(k, "thrift") * 8);
+  const chamberMarkup = () => 1 + (CFG.chamber - 1) * 0.45 + (CFG.chapter - 1) * 0.25;
+  const costOf = k => Math.max(15,
+      Math.round(UNITS[k].cost * (hasUp(k, "cheap") ? 0.66 : 1) * chamberMarkup())
+      - smallOf(k, "thrift") * 8);
   const rechargeOf = k => UNITS[k].recharge * (hasUp(k, "quick") ? 0.5 : 1)
                           * Math.pow(0.82, smallOf(k, "hands"));
 
@@ -585,6 +592,7 @@
       coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 5.0,
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
       traps: new Array(ROWS).fill(CFG.world !== "deep"),
+      cart: CFG.world === "deep" ? 3 : 0,
       cool: Object.fromEntries(Object.keys(UNITS).map(k => [k, 0])),
       buried: {}, buryT: 14, veins: {},
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
@@ -662,7 +670,7 @@
   let CHAMBER_WAVES = WAVES;
   // The board carries across a chapter, so each chamber has to ask a good deal more
   // than the last or the second and third are a victory lap.
-  const hpScale = () => 1 + (CFG.chapter - 1) * 0.35 + (CFG.chamber - 1) * 0.28;
+  const hpScale = () => 1 + (CFG.chapter - 1) * 0.35 + (CFG.chamber - 1) * 0.16;
 
   function startWave() {
     S.waveIx++;
@@ -670,7 +678,13 @@
     const w = CHAMBER_WAVES[S.waveIx];
     let t = 0;
     const gap = Math.max(0.5, 1.6 - S.waveIx * 0.17);
-    S.queue = w.list.map(type => {
+    // Deeper CHAPTERS send more bodies; deeper chambers do not. Stacking extra spawns
+    // on top of the per-chamber hp ramp and the price markup made chamber three
+    // unwinnable rather than hard — measured at 0% held across every wave multiplier
+    // tried, while the markup alone left it contested.
+    const extra = Math.round((CFG.chapter - 1) * 0.25 * w.list.length);
+    const list = w.list.concat(Array.from({ length: extra }, () => pick(w.list)));
+    S.queue = list.map(type => {
       t += rnd(gap * 0.65, gap * 1.5);
       // deeper chapters send leapers in place of scouts — a different problem, not a
       // bigger one, which is the whole point of going down
@@ -1084,6 +1098,18 @@
           burst(OX + 22, laneY(f.lane) + CELL * 0.6, 24,
                 { colors: ["#e8c05a", "#fff3cf", "#8f8698"], spread: 380, size: [1.8, 4.6] });
           kick(12); stop(0.08); flash(0.3); Sound.play("trap");
+        } else if (S.cart > 0) {
+          // it gets through, and the caravan pays for it
+          S.cart--;
+          f.hp = 0; f.byTrap = true;
+          for (const v of S.foes) if (v.lane === f.lane && v.hp > 0 && v.x < OX + CELL) {
+            v.hp = 0; v.byTrap = true;
+          }
+          ring(OX + 22, laneY(f.lane) + CELL * 0.6, 220, "rgba(209,85,63,.9)", 6, 0.5);
+          burst(OX + 10, H / 2, 26,
+                { colors: ["#e8c05a", "#8a7134", "#d1553f"], spread: 380 });
+          popText(OX + 40, OY + 18, S.cart + " LEFT", "#d1553f");
+          kick(16); stop(0.12); flash(0.38); Sound.play("trap");
         } else defeat();
       }
     }
@@ -1543,21 +1569,34 @@
     // The moment a card is picked up, every goblin that has room to take it is ringed.
     // Nobody drops a goblin onto a goblin unless the board tells them they can, and a
     // tutorial line would only reach the players who read it.
+    // holding a goblin: ring the bodies it will fit into
+    if (S.selGob && !S.over) {
+      for (const g of S.goblins) {
+        if (g === S.selGob || g.parts.length + S.selGob.parts.length > MAX_PARTS) continue;
+        const gp = cellOf(g);
+        const pulse = 0.5 + Math.sin(S.t * 3.4 + g.col * 0.9) * 0.5;
+        cx.strokeStyle = "rgba(232,192,90," + (0.25 + pulse * 0.3) + ")";
+        cx.lineWidth = 2;
+        cx.strokeRect(gp.x + 4, gp.y + 4, CELL - 8, CELL - 8);
+      }
+    }
+
     if (S.selUnit && !S.over && S.coins >= costOf(S.selUnit) && S.cool[S.selUnit] <= 0) {
-      const pulse = 0.5 + Math.sin(S.t * 4.4) * 0.5;
+      // Out of step, so a full board reads as a scatter of hints rather than one throb.
       for (const g of S.goblins) {
         if (g.parts.length >= MAX_PARTS) continue;
         const gp = cellOf(g), gx = gp.x + CELL / 2, gy = gp.y + CELL / 2;
-        cx.strokeStyle = "rgba(232,192,90," + (0.3 + pulse * 0.45) + ")";
-        cx.lineWidth = 2 + pulse * 1.4;
-        cx.beginPath(); cx.arc(gx, gy, CELL * 0.42 - pulse * 3, 0, 6.284); cx.stroke();
-        // a plus sign, because that is the verb
-        cx.lineWidth = 3; cx.lineCap = "round";
-        cx.strokeStyle = "rgba(255,243,207," + (0.45 + pulse * 0.5) + ")";
-        const s2 = 7 + pulse * 1.5, py2 = gp.y + 13;
+        const phase = (g.col * 0.7 + g.row * 1.3);
+        const pulse = 0.5 + Math.sin(S.t * 3.1 + phase) * 0.5;
+        cx.strokeStyle = "rgba(232,192,90," + (0.2 + pulse * 0.26) + ")";
+        cx.lineWidth = 1.6;
+        cx.beginPath(); cx.arc(gx, gy, CELL * 0.42, 0, 6.284); cx.stroke();
+        cx.lineWidth = 2; cx.lineCap = "round";
+        cx.strokeStyle = "rgba(232,192,90," + (0.3 + pulse * 0.34) + ")";
+        const s2 = 5, py2 = gp.y + 11, px2 = gp.x + CELL - 11;
         cx.beginPath();
-        cx.moveTo(gx - s2, py2); cx.lineTo(gx + s2, py2);
-        cx.moveTo(gx, py2 - s2); cx.lineTo(gx, py2 + s2);
+        cx.moveTo(px2 - s2, py2); cx.lineTo(px2 + s2, py2);
+        cx.moveTo(px2, py2 - s2); cx.lineTo(px2, py2 + s2);
         cx.stroke();
       }
     }
@@ -1619,6 +1658,13 @@
     }
     cx.font = "10px " + FONT; cx.fillStyle = "#8a7134"; cx.textAlign = "center";
     cx.fillText("THE CARAVAN", OX / 2, OY - 12);
+    if (S.cart > 0) {
+      for (let i = 0; i < 3; i++) {
+        cx.beginPath(); cx.arc(OX / 2 - 16 + i * 16, OY - 26, 5, 0, 6.284);
+        cx.fillStyle = i < S.cart ? "#e8c05a" : "rgba(120,110,130,.35)";
+        cx.fill();
+      }
+    }
 
     for (let r = 0; r < ROWS; r++) {
       const yy = laneY(r) + CELL * 0.66;
@@ -1820,6 +1866,34 @@
     return true;
   }
 
+  // Carrying one goblin into another. Costs nothing — you already paid for both — and
+  // it is the only way to recover a Digger whose pocket has run dry.
+  function fuseInPlace(src, dst) {
+    if (src.parts.length + dst.parts.length > MAX_PARTS) {
+      Sound.play("deny");
+      popText(OX + dst.col * CELL + CELL / 2, OY + dst.row * CELL + 12,
+              "NO ROOM IN THERE", "#d1553f");
+      return false;
+    }
+    if (!laneIsOpen(dst.row) || S.buried[dst.col + "," + dst.row]) { Sound.play("deny"); return false; }
+    const keptFrac = clamp(src.hp / maxHpOf(src), 0.2, 1);
+    for (const t of src.parts) dst.parts.push(t);
+    S.goblins = S.goblins.filter(g => g !== src);
+    // the one that walked over arrives as hurt as it was
+    dst.hp = Math.max(dst.hp, maxHpOf(dst) * Math.min(1, (dst.hp / maxHpOf(dst) + keptFrac) / 2));
+    dst.hp = clamp(dst.hp, 12, maxHpOf(dst));
+    dst.squash = 1.4; dst.born = S.t;
+    const gp = cellOf(dst);
+    burst(gp.x + CELL / 2, gp.y + CELL / 2, 22,
+          { colors: ["#fff3cf", "#e8c05a", tintOf(dst)], spread: 300, size: [1.8, 4.4] });
+    ring(gp.x + CELL / 2, gp.y + CELL / 2, 92, "rgba(255,243,207,.8)", 4, 0.4);
+    popText(gp.x + CELL / 2, gp.y + 4, nameOf(dst).toUpperCase(), "#fff3cf");
+    kick(8); stop(0.07); Sound.play("merge");
+    S.selGob = null;
+    renderInspector();
+    return true;
+  }
+
   // Dig one up. Free for a moment in case of a misclick, then half back.
   const GRACE = 3;
   function refundOf(g) {
@@ -1848,6 +1922,9 @@
 
     if (S.selUnit) { tryPlace(S.selUnit, col, row); return; }
     const occ = gobAt(col, row);
+    // A goblin already on the board can be folded into another one. This is how a
+    // worked-out Digger gets reused instead of dug up for half its gold.
+    if (S.selGob && occ && occ !== S.selGob && fuseInPlace(S.selGob, occ)) return;
     S.selGob = (occ && S.selGob !== occ) ? occ : null;
     if (S.selGob) Sound.play("select");
     renderInspector();
@@ -2367,7 +2444,7 @@
     const c = el("div", "crew");
     const paint = () => {
       note.innerHTML = "<b>" + (R.gold || 0) + " gold</b> in hand. "
-        + "Just over half of it comes with you into the next chamber.";
+        + "About a third of it comes with you into the next chamber.";
       [...c.children].forEach((b, i) => {
         const o = offers[i];
         b.disabled = o.bought || (R.gold || 0) < o.price;
@@ -2452,7 +2529,7 @@
       // small wage so a wiped-out lane can be answered
       R.board = board;
       R.veins = veins;
-      R.gold = Math.round(goldLeft * 0.55) + 60;
+      R.gold = Math.round(goldLeft * 0.35) + 40;
       save();
     });
   }
