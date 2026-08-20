@@ -1238,6 +1238,21 @@
     cx.restore();
   }
 
+  // The one "this body has room" mark. Ring plus plus sign, same geometry either way.
+  function drawFuseSlot(gp, pulse) {
+    const gx = gp.x + CELL / 2, gy = gp.y + CELL / 2;
+    cx.strokeStyle = "rgba(232,192,90," + (0.2 + pulse * 0.26) + ")";
+    cx.lineWidth = 1.6;
+    cx.beginPath(); cx.arc(gx, gy, CELL * 0.42, 0, 6.284); cx.stroke();
+    cx.strokeStyle = "rgba(232,192,90," + (0.3 + pulse * 0.34) + ")";
+    cx.lineWidth = 2; cx.lineCap = "round";
+    const s = 5, py = gp.y + 11, px = gp.x + CELL - 11;
+    cx.beginPath();
+    cx.moveTo(px - s, py); cx.lineTo(px + s, py);
+    cx.moveTo(px, py - s); cx.lineTo(px, py + s);
+    cx.stroke();
+  }
+
   function drawGoblin(g) {
     const p = cellOf(g);
     const cxp = p.x + CELL / 2, cyp = p.y + CELL * 0.58;
@@ -1566,58 +1581,43 @@
       cx.beginPath(); cx.moveTo(OX, OY + r * CELL); cx.lineTo(OX + COLS * CELL, OY + r * CELL); cx.stroke();
     }
 
-    // The moment a card is picked up, every goblin that has room to take it is ringed.
-    // Nobody drops a goblin onto a goblin unless the board tells them they can, and a
-    // tutorial line would only reach the players who read it.
-    // holding a goblin: ring the bodies it will fit into
-    if (S.selGob && !S.over) {
-      for (const g of S.goblins) {
-        if (g === S.selGob || g.parts.length + S.selGob.parts.length > MAX_PARTS) continue;
-        const gp = cellOf(g);
-        const pulse = 0.5 + Math.sin(S.t * 3.4 + g.col * 0.9) * 0.5;
-        cx.strokeStyle = "rgba(232,192,90," + (0.25 + pulse * 0.3) + ")";
-        cx.lineWidth = 2;
-        cx.strokeRect(gp.x + 4, gp.y + 4, CELL - 8, CELL - 8);
+    // Whatever is in your hand - a card from the rack or a goblin already standing on the
+    // board - the bodies that will take it are marked the same way. Two indicators for one
+    // idea taught players there were two different rules.
+    if (!S.over) {
+      const held = S.selGob ? S.selGob.parts.length
+                 : (S.selUnit && S.coins >= costOf(S.selUnit) && S.cool[S.selUnit] <= 0) ? 1
+                 : 0;
+      if (held) {
+        for (const g of S.goblins) {
+          if (g === S.selGob || g.parts.length + held > MAX_PARTS) continue;
+          // Out of step, so a full board reads as a scatter of hints rather than one throb.
+          drawFuseSlot(cellOf(g), 0.5 + Math.sin(S.t * 3.1 + g.col * 0.7 + g.row * 1.3) * 0.5);
+        }
       }
     }
 
-    if (S.selUnit && !S.over && S.coins >= costOf(S.selUnit) && S.cool[S.selUnit] <= 0) {
-      // Out of step, so a full board reads as a scatter of hints rather than one throb.
-      for (const g of S.goblins) {
-        if (g.parts.length >= MAX_PARTS) continue;
-        const gp = cellOf(g), gx = gp.x + CELL / 2, gy = gp.y + CELL / 2;
-        const phase = (g.col * 0.7 + g.row * 1.3);
-        const pulse = 0.5 + Math.sin(S.t * 3.1 + phase) * 0.5;
-        cx.strokeStyle = "rgba(232,192,90," + (0.2 + pulse * 0.26) + ")";
-        cx.lineWidth = 1.6;
-        cx.beginPath(); cx.arc(gx, gy, CELL * 0.42, 0, 6.284); cx.stroke();
-        cx.lineWidth = 2; cx.lineCap = "round";
-        cx.strokeStyle = "rgba(232,192,90," + (0.3 + pulse * 0.34) + ")";
-        const s2 = 5, py2 = gp.y + 11, px2 = gp.x + CELL - 11;
-        cx.beginPath();
-        cx.moveTo(px2 - s2, py2); cx.lineTo(px2 + s2, py2);
-        cx.moveTo(px2, py2 - s2); cx.lineTo(px2, py2 + s2);
-        cx.stroke();
-      }
-    }
-
-    if (S.selUnit && hover.col >= 0 && !S.over) {
-      const u = UNITS[S.selUnit];
-      // An occupied cell is a legal target now — that is where fusions come from — so it
-      // only reads red when the goblin standing there is already full.
+    if ((S.selUnit || S.selGob) && hover.col >= 0 && !S.over) {
+      // The hovered cell answers the same question for both hands: does what I am holding
+      // go here, and what does it turn into.
+      const carry = S.selGob ? S.selGob.parts : [S.selUnit];
       const on = gobAt(hover.col, hover.row);
+      // An occupied cell is a legal target - that is where fusions come from - so it only
+      // reads red when the body standing there has no room. A goblin lifted off the board
+      // has nowhere to go but into another goblin, so bare ground is red for it.
       const ok = laneIsOpen(hover.row) && !S.buried[hover.col + "," + hover.row]
-                 && (!on || on.parts.length < MAX_PARTS)
-                 && S.coins >= costOf(S.selUnit) && S.cool[S.selUnit] <= 0;
+                 && (on ? on !== S.selGob && on.parts.length + carry.length <= MAX_PARTS
+                        : !S.selGob)
+                 && (S.selGob || (S.coins >= costOf(S.selUnit) && S.cool[S.selUnit] <= 0));
       cx.fillStyle = ok ? "rgba(111,191,91,.2)" : "rgba(209,85,63,.2)";
       cx.fillRect(OX + hover.col * CELL, OY + hover.row * CELL, CELL, CELL);
       cx.strokeStyle = ok ? "rgba(111,191,91,.75)" : "rgba(209,85,63,.75)";
       cx.lineWidth = 2;
       cx.strokeRect(OX + hover.col * CELL + 2, OY + hover.row * CELL + 2, CELL - 4, CELL - 4);
-      // Hovering a goblin you can fuse names the creature you would get, so the trade is
-      // legible before you pay for it.
+      // Hovering a body you can fuse names the creature you would get, so the trade is
+      // legible before you commit to it.
       if (ok && on) {
-        const would = nameOf({ parts: on.parts.concat(S.selUnit) }).toUpperCase();
+        const would = nameOf({ parts: on.parts.concat(carry) }).toUpperCase();
         const tx = OX + hover.col * CELL + CELL / 2, ty = OY + hover.row * CELL - 5;
         cx.font = "bold 11px " + FONT; cx.textAlign = "center";
         const tw = cx.measureText(would).width + 10;
@@ -2106,6 +2106,7 @@
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
     nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, UPGRADES, SMALLS, place: tryPlace,
+    costOf,
     smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
     smallCount: (role, id) => smallOf(role, id),
     remove: removeGoblin,
@@ -2132,7 +2133,11 @@
         }
       }
       if (cfg.carryGold !== undefined) S.coins = cfg.carryGold;
-      else S.coins = Math.round(START_COINS * (1 + (CFG.chapter - 1) * 0.5));
+      // Opening gold rides the shop's own markup, so what 400 buys in chapter 1 is what a
+      // chapter-3 opening buys too. The old +50% a chapter outran the +25% price rise, so
+      // the deepest chapter started a third richer than the first while everything else
+      // about it was meant to be harder.
+      else S.coins = Math.round(START_COINS * (1 + (CFG.chapter - 1) * 0.25));
       if (cfg.veins) S.veins = Object.assign({}, cfg.veins);
       CHAMBER_WAVES = wavesForChamber();
       S.bannerText = "CHAMBER " + CFG.chamber + " OF 3";
