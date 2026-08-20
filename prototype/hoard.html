@@ -927,8 +927,12 @@
           if (countOf(g, "keg") > 0)
             spec = { ...spec, kind: "bomb", aoe: 46 + 14 * countOf(g, "keg"),
                      aoeDmg: Math.round(spec.dmg * 0.55), snd: "throw" };
-          if (countOf(g, "hollerer") > 0) spec = { ...spec, slow: 1.6 };
-          if (countOf(g, "sapper") > 0)   spec = { ...spec, shove: 12 * countOf(g, "sapper") };
+          // A shove staggers. It used to be 12px a shot per Sapper, which against a
+          // squire's 28px of walking beat the walk outright - three of them drove
+          // heroes backwards off the right edge of the board and simply won.
+          if (countOf(g, "hollerer") > 0) spec = { ...spec, slow: 1.1 };
+          if (countOf(g, "sapper") > 0)
+            spec = { ...spec, shove: Math.min(10, 4 * countOf(g, "sapper")) };
           if (countOf(g, "tollkeep") > 0) spec = { ...spec, bounty: 7 * countOf(g, "tollkeep") };
           g.cd = spec.cd;
           S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
@@ -1075,7 +1079,9 @@
       if (f.slowT > 0) f.slowT -= dt;
       const jeering = S.goblins.some(g => g.row === f.lane &&
                                      (countOf(g, "hollerer") > 0 || gobHas(g, "loud")));
-      const jeer = (jeering ? 0.5 : 1) * (f.slowT > 0 ? 0.55 : 1);
+      // The two slows do not multiply. A Loud lane at half speed times a Hollerer's
+      // shot at 0.55 left heroes at a quarter pace with nothing to do about it.
+      const jeer = Math.min(jeering ? 0.82 : 1, f.slowT > 0 ? 0.62 : 1);
       if (jeering && Math.random() < dt * 2.2)
         burst(f.x, laneY(f.lane) + CELL * 0.3, 2,
               { colors: ["#9a7fc4", "#c9b6e8"], spread: 60, size: [1.4, 2.6],
