@@ -146,7 +146,7 @@
                 text-transform: uppercase; letter-spacing: .03em; }
   .m-note { color: var(--ink-dim); font-size: 13.5px; margin: 0; }
   .m-note b { color: var(--ink); }
-  .crew { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+  .crew { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
   .gob { background: var(--stone); border: 1px solid #3b3340; border-left: 3px solid var(--role);
          border-radius: 4px; padding: 9px 11px; display: flex; flex-direction: column; gap: 2px;
          cursor: pointer; text-align: left; color: var(--ink); font-family: var(--body);
@@ -182,6 +182,27 @@
   .step-n { font-family: var(--display); font-size: 15px; text-transform: uppercase; }
   .m-row { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
   .roster { display: flex; gap: 7px; flex-wrap: wrap; }
+
+  /* ---- phone. Vampire Survivors picks a level-up from three full-width rows you can
+     hit with a thumb without looking; the meta screens do the same. Touch targets stay
+     over 48px with 8px between them, and the action that moves you forward is pinned to
+     the bottom of the screen so it is never at the end of a scroll. */
+  @media (max-width: 560px) {
+    .meta { padding: 10px 10px 84px; gap: 10px; }
+    .m-panel { padding: 12px; gap: 9px; }
+    .crew, .worlds { grid-template-columns: 1fr; gap: 8px; }
+    .gob, .world { min-height: 56px; padding: 11px 13px; }
+    .gob-name { font-size: 17px; }
+    .gob-note { font-size: 12.5px; }
+    .gob-kit { font-size: 12px; margin-top: 2px; }
+    .m-row { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+             margin: 0; padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+             background: linear-gradient(180deg, rgba(11,9,16,0), rgba(11,9,16,.94) 38%);
+             gap: 8px; }
+    .m-row .btn { flex: 1 1 0; min-height: 50px; font-size: 14px; }
+    .m-bar { padding: 7px 10px; gap: 12px; }
+    .m-bar .readout-value { font-size: 18px; }
+  }
   .tile { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 9px;
           background: var(--stone); border: 1px solid #3b3340;
           border-left: 3px solid var(--role, var(--gold-dim)); border-radius: 3px; }
@@ -561,7 +582,7 @@
   let S;
   function newRun() {
     S = {
-      coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 2.6,
+      coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 5.0,
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
       traps: new Array(ROWS).fill(CFG.world !== "deep"),
       cool: Object.fromEntries(Object.keys(UNITS).map(k => [k, 0])),
@@ -571,6 +592,10 @@
       // 0 = still caved in, 1 = open ground. Closed lanes are rubble you cannot build on.
       laneReveal: new Array(ROWS).fill(0)
         .map((_, r) => CFG.chamber > 1 || LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
+      // ground being open and heroes being allowed down it are two different things
+      laneLive: new Array(ROWS).fill(0)
+        .map((_, r) => CFG.chamber > 1 || LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
+      laneFlash: new Array(ROWS).fill(0),
       selUnit: null, selGob: null,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
       over: false, won: false, paused: false, t: 0, killed: 0, mined: 0, rate: 0,
@@ -664,7 +689,8 @@
   }
 
   function chooseLane() {
-    const open = LANE_ORDER.slice(0, lanesOpen(S.waveIx));
+    let open = LANE_ORDER.slice(0, lanesOpen(S.waveIx)).filter(r => S.laneLive[r]);
+    if (!open.length) open = LANE_ORDER.slice(0, lanesOpen(S.waveIx));
     const cap = Math.min(laneBudget(S.waveIx), open.length);
     // Once a wave has spent its lane allowance it keeps coming down the lanes it already
     // opened with, rather than picking a fresh one you have nothing standing in.
@@ -722,14 +748,21 @@
       const want = laneIsOpen(r) ? 1 : 0;
       if (S.laneReveal[r] === 0 && want === 1) {
         const y = OY + r * CELL + CELL / 2;
-        for (let i = 0; i < 5; i++)
-          burst(OX + rnd(0, COLS * CELL), y + rnd(-16, 16), 7,
-                { colors: ["#4a4150", "#3b3340", "#6b5f4a"], spread: 200,
-                  size: [1.6, 4.2], gravity: 460, life: [0.3, 0.7] });
-        kick(6); Sound.play("dig");
+        for (let i = 0; i < 9; i++)
+          burst(OX + rnd(0, COLS * CELL), y + rnd(-20, 20), 8,
+                { colors: ["#4a4150", "#3b3340", "#6b5f4a"], spread: 230,
+                  size: [1.6, 4.6], gravity: 460, life: [0.3, 0.8] });
+        ring(OX + COLS * CELL * 0.5, y, COLS * CELL * 0.6, "rgba(232,192,90,.7)", 5, 0.6);
+        S.laneFlash[r] = 2.6;
+        S.bannerText = "A LANE OPENS";
+        S.banner = 2.0;
+        kick(9); stop(0.06); Sound.play("wave");
       }
       if (S.laneReveal[r] !== want)
-        S.laneReveal[r] = clamp(S.laneReveal[r] + (want ? dt : -dt) * 0.9, 0, 1);
+        S.laneReveal[r] = clamp(S.laneReveal[r] + (want ? dt : -dt) * 0.55, 0, 1);
+      if (S.laneFlash[r] > 0) S.laneFlash[r] -= dt;
+      // nothing comes down it until it has finished opening and you have had a beat
+      if (S.laneReveal[r] >= 1 && S.laneFlash[r] <= 0) S.laneLive[r] = 1;
     }
 
     // ---- the world rule
@@ -1411,6 +1444,19 @@
         const leftV = S.veins[c + "," + r];
         const dug = leftV === undefined ? 1 : leftV;
         const shown = Math.round(n * dug);
+        if (dug <= 0.1) {
+          // spent ground: a dark hatch you can read at any column
+          cx.save();
+          cx.beginPath(); cx.rect(OX + c * CELL, OY + r * CELL, CELL, CELL); cx.clip();
+          cx.strokeStyle = "rgba(120,112,130,.28)"; cx.lineWidth = 2;
+          for (let k = -CELL; k < CELL; k += 11) {
+            cx.beginPath();
+            cx.moveTo(OX + c * CELL + k, OY + r * CELL);
+            cx.lineTo(OX + c * CELL + k + CELL, OY + r * CELL + CELL);
+            cx.stroke();
+          }
+          cx.restore();
+        }
         for (let i = 0; i < shown; i++) {
           const a = ((i * 2.399 + c * 1.7 + r * 0.31) % 1);
           const b = ((i * 4.771 + r * 2.3 + c * 0.53) % 1);
@@ -1470,6 +1516,20 @@
       cx.fillStyle = "rgba(232,192,90,.5)";
       cx.fillRect(x + 8, y + CELL - 9, (CELL - 16) * clamp(left, 0, 1), 2.5);
       cx.restore();
+    }
+
+    // A lane that has just opened glows until it is live, so "new ground" and "heroes
+    // are coming down here now" are two visibly different moments.
+    for (let r = 0; r < ROWS; r++) {
+      if (!S.laneFlash || S.laneFlash[r] <= 0) continue;
+      const k = Math.min(1, S.laneFlash[r] / 2.6);
+      const y = OY + r * CELL;
+      const pulse = 0.25 + Math.abs(Math.sin(S.t * 5)) * 0.35;
+      cx.fillStyle = "rgba(232,192,90," + (pulse * k * 0.5) + ")";
+      cx.fillRect(OX, y, COLS * CELL, CELL);
+      cx.strokeStyle = "rgba(232,192,90," + (0.5 + pulse * 0.5) * k + ")";
+      cx.lineWidth = 3;
+      cx.strokeRect(OX + 1.5, y + 1.5, COLS * CELL - 3, CELL - 3);
     }
 
     cx.strokeStyle = "rgba(0,0,0,.35)"; cx.lineWidth = 1;
@@ -2097,8 +2157,21 @@
     else stat("Cleared", Object.keys(M.cleared || {}).length + "/3");
     const sp = el("span"); sp.style.marginLeft = "auto";
     const wipe = el("button", "btn", "Wipe save");
-    wipe.onclick = () => { if (confirm("Wipe the save?")) {
-      localStorage.removeItem(SAVE); load(); warren(); } };
+    // Native confirm() is suppressed inside the sandboxed frame the game is viewed in,
+    // so it silently answered "no" and the button did nothing. Two taps on the button
+    // itself instead — no dialogs anywhere in the game.
+    let armed = false;
+    wipe.onclick = () => {
+      if (!armed) {
+        armed = true;
+        wipe.textContent = "Tap again to wipe";
+        wipe.classList.add("danger");
+        setTimeout(() => { if (!armed) return;
+          armed = false; wipe.textContent = "Wipe save"; wipe.classList.remove("danger"); }, 3000);
+        return;
+      }
+      localStorage.removeItem(SAVE); load(); warren();
+    };
     sp.append(wipe); b.append(sp);
     return b;
   }
@@ -2219,8 +2292,9 @@
     for (const g of uniq) {
       const b = el("button", "gob");
       b.style.setProperty("--role", V.UNITS[g.role].tint);
-      b.append(el("span", "gob-role", V.UNITS[g.role].name + " · " + V.UNITS[g.role].cost + "g"));
-      b.append(el("span", "gob-name", ROLES[g.role].note));
+      b.append(el("span", "gob-role", V.UNITS[g.role].cost + " gold to place"));
+      b.append(el("span", "gob-name", V.UNITS[g.role].name));
+      b.append(el("span", "gob-note", ROLES[g.role].note));
       if (V.UNITS[g.role].answers === chosenWorld) {
         const tag = el("span", "gob-kit", "✦ answers " + w.name);
         b.append(tag);
