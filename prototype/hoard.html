@@ -50,8 +50,20 @@
      UA's blue. Kill both everywhere — nothing on this page is meant to be selected. */
   * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
       -webkit-user-select: none; user-select: none; }
-  .play { display: flex; flex-direction: column; gap: 12px; }
 
+  /* A phone has no pointer to hover with, so a tap lands the :hover state and it sticks
+     until you tap something else - cards left bright and lifted a few pixels behind you as
+     you play. Gate the lot behind a real pointer. */
+  @media (hover: hover) and (pointer: fine) {
+    .fo:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.2); }
+    .card:hover:not(:disabled) { transform: translateY(-3px); filter: brightness(1.14); }
+    .btn:hover { color: var(--ink); border-color: var(--gold-dim); transform: translateY(-2px); }
+    .btn.danger:hover { border-color: var(--alarm); color: #ffb3a3; }
+    .gob:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.16); }
+    .world:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.18); }
+  }
+
+  .play { display: flex; flex-direction: column; gap: 12px; }
 
   .rack { display: flex; gap: 9px; flex-wrap: wrap; }
   .forge { display: flex; gap: 7px; flex-wrap: wrap; align-items: stretch; }
@@ -60,7 +72,7 @@
         background: #1d1822; border: 1px dashed #4a4150; border-left: 3px solid var(--fu, #8a7134);
         border-radius: 3px; padding: 6px 9px; color: var(--ink); font-family: var(--body);
         text-align: left; cursor: pointer; transition: transform .1s, filter .12s; }
-  .fo:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.2); }
+
   .fo:disabled { opacity: .34; cursor: not-allowed; }
   .fo-t { font-size: 12px; font-weight: 700; }
   .fo-r { font-family: var(--data); font-size: 9.5px; letter-spacing: .07em;
@@ -73,7 +85,7 @@
           border-radius: 3px; padding: 8px 10px; color: var(--ink);
           font-family: var(--body); font-size: 12.5px; text-align: left; cursor: pointer;
           transition: transform .1s cubic-bezier(.3,1.6,.5,1), border-color .12s, filter .12s; }
-  .card:hover:not(:disabled) { transform: translateY(-3px); filter: brightness(1.14); }
+
   .card:active:not(:disabled) { transform: translateY(1px) scale(.98); }
   .card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .card[aria-pressed="true"] { border-color: var(--gold);
@@ -93,7 +105,7 @@
          background: transparent; color: var(--ink-dim); border: 1px solid #443b49;
          border-radius: 3px; padding: 5px 12px; cursor: pointer;
          transition: transform .1s, color .12s, border-color .12s; }
-  .btn:hover { color: var(--ink); border-color: var(--gold-dim); transform: translateY(-2px); }
+
   .btn:active { transform: translateY(1px); }
   .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .btn.on { color: var(--gold); border-color: var(--gold-dim); }
@@ -108,7 +120,7 @@
                  text-transform: uppercase; color: var(--gold); font-weight: normal; }
   .insp-meta { font-family: var(--data); font-size: 11.5px; color: var(--ink-dim); }
   .btn.danger { margin-left: auto; border-color: #6b3a35; color: #e0897a; }
-  .btn.danger:hover { border-color: var(--alarm); color: #ffb3a3; }
+
   .card.drag { opacity: .5; }
 
   .foot { font-size: 12.5px; color: var(--ink-dim); max-width: 76ch;
@@ -156,7 +168,7 @@
          border-radius: 4px; padding: 9px 11px; display: flex; flex-direction: column; gap: 2px;
          cursor: pointer; text-align: left; color: var(--ink); font-family: var(--body);
          position: relative; transition: transform .1s, filter .12s; }
-  .gob:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.16); }
+
   .gob:disabled { opacity: .4; cursor: not-allowed; }
   .gob.picked { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
   .gob-name { font-family: var(--display); font-size: 16px; text-transform: uppercase;
@@ -170,7 +182,7 @@
   .world { background: var(--stone); border: 1px solid #3b3340; border-radius: 4px; padding: 13px;
            display: flex; flex-direction: column; gap: 7px; cursor: pointer; text-align: left;
            color: var(--ink); font-family: var(--body); transition: transform .1s, filter .12s; }
-  .world:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.18); }
+
   .world-name { font-family: var(--display); font-size: 20px; text-transform: uppercase;
                 color: var(--gold); line-height: 1.05; }
   .world-rule { font-size: 12.5px; }
@@ -262,7 +274,6 @@
     <button class="btn on" id="mute" type="button">Sound on</button>
 
   </div>
-
 
 </div>
 
@@ -456,7 +467,7 @@
 
   const MAX_PARTS = 3;
 
-  const chamberMarkup = () => 1 + (CFG.chamber - 1) * 0.45 + (CFG.chapter - 1) * 0.25;
+  const chamberMarkup = () => 1 + (CFG.chamber - 1) * 0.3 + (CFG.chapter - 1) * 0.2;
   const costOf = k => Math.max(15,
       Math.round(UNITS[k].cost * (hasUp(k, "cheap") ? 0.66 : 1) * chamberMarkup())
       - smallOf(k, "thrift") * 8);
@@ -531,11 +542,14 @@
   const VEIN_PULLS = 26;            // roughly how many payouts a cell has in it
   const RUBBLE_LIFE = 18;          // seconds before a rockfall settles on its own
   const LANE_ORDER = [2, 1, 3, 0, 4];
-  const lanesOpen = ix => CFG.chamber > 1 ? 5 : ix < 3 ? 3 : ix < 4 ? 4 : 5;
+  // The three-lane opening is a tutorial, and a tutorial you sit through at the top of
+  // every chapter is just the game starting slowly four times.
+  const tutorial = () => CFG.chapter === 1 && CFG.chamber === 1;
+  const lanesOpen = ix => !tutorial() ? 5 : ix < 3 ? 3 : ix < 4 ? 4 : 5;
   // Ground being open is not the same as it being used. Wave 1 comes down a single lane
   // however many are open, because 250 gold buys two Chuckers and no more — three lanes
   // at once is a trap you pay a bear trap for through no fault of your own.
-  const laneBudget = ix => CFG.chamber > 1 ? 99 : ix === 0 ? 1 : ix === 1 ? 2 : 99;
+  const laneBudget = ix => !tutorial() ? 99 : ix === 0 ? 1 : ix === 1 ? 2 : 99;
   const laneIsOpen = r => LANE_ORDER.indexOf(r) < lanesOpen(Math.max(S.waveIx, 0));
 
   // Purses are the whole early economy — there is no sun falling from the sky here, so
@@ -556,17 +570,32 @@
 
   // Each world breaks one thing you lean on and names the goblin that answers it —
   // the way PvZ's night takes away sky sun and hands you a Sun-shroom.
+  // One route down, four chapters, each one a different kind of squeeze. The numbers a
+  // world bends live here rather than as `world === "rot"` checks scattered through the
+  // update, because the whole point is that the three costs are comparable.
+  //   purse - what a dead hero is worth
+  //   dig   - what a pull out of a vein is worth
+  //   bore  - how fast a pull eats the seam under it
+  const world = () => WORLDS[CFG.world] || WORLDS.hollow;
   const WORLDS = {
-    scree: { name: "The Scree", tier: 1, answer: "sapper",
+    hollow:{ name: "The Hollow", tier: 0, answer: null, purse: 1, dig: 1, bore: 1,
+             rule: "Quiet ground. Nothing down here but the heroes.",
+             fix: "" },
+    scree: { name: "The Scree", tier: 1, answer: "sapper", purse: 1, dig: 1, bore: 1,
              rule: "Rockfall buries a cell every few seconds. You cannot build on rubble.",
              fix: "A Sapper shovels its lane clear." },
-    rot:   { name: "The Rot", tier: 2, answer: "tollkeep",
+    rot:   { name: "The Rot", tier: 2, answer: "tollkeep", purse: 1, dig: 0.25, bore: 1,
              rule: "Dead ground. Diggers pull a quarter of what they should.",
              fix: "A Tollkeeper earns off kills instead." },
-    deep:  { name: "The Deep", tier: 3, answer: "keg",
-             rule: "No bear traps. Nothing catches what gets past you.",
+    // The Deep used to differ from the Scree only in what happens when you lose, which
+    // costs nothing at all while you are winning - the reason it played as the easy one.
+    // Its seams are now rich and thin: a pull is worth more and kills the vein twice as
+    // fast, so a digger there is a thing you keep having to move.
+    deep:  { name: "The Deep", tier: 3, answer: "keg", purse: 1, dig: 1.35, bore: 2.2,
+             rule: "Rich, thin seams, and no bear traps behind you.",
              fix: "A Powder Keg is a trap you place yourself." },
   };
+  const ROUTE = ["hollow", "scree", "rot", "deep"];
 
   const S_ = "squire", C_ = "scout", G_ = "sergeant", L_ = "leaper",
         P_ = "pavise", R_ = "runner";
@@ -670,7 +699,9 @@
   let CHAMBER_WAVES = WAVES;
   // The board carries across a chapter, so each chamber has to ask a good deal more
   // than the last or the second and third are a victory lap.
-  const hpScale = () => 1 + (CFG.chapter - 1) * 0.35 + (CFG.chamber - 1) * 0.16;
+  // Four chapters now, so the per-chapter step is smaller than it was across three -
+  // the ladder ends in the same place, it just has more rungs.
+  const hpScale = () => 1 + (CFG.chapter - 1) * 0.3 + (CFG.chamber - 1) * 0.16;
 
   function startWave() {
     S.waveIx++;
@@ -841,7 +872,27 @@
       if (g.hp <= 0) continue;
       const p = cellOf(g);
       // under a rockfall: still there, still soaks hits, but not working
-      if (S.buried[g.col + "," + g.row] && !gobHas(g, "packed")) { g.entombed = 1; continue; }
+      const ownKey = g.col + "," + g.row;
+      if (S.buried[ownKey] && !gobHas(g, "packed")) {
+        g.entombed = 1;
+        // Everything under a rockfall stops working - except the goblin whose whole job is
+        // rubble. It digs itself out, and only itself, at half the speed it clears a
+        // neighbour: a rockfall still costs the lane its Sapper for a few seconds, rather
+        // than parking it for the full eighteen with no way to answer.
+        if (countOf(g, "sapper") > 0) {
+          g.dug = (g.dug || 0) + dt * countOf(g, "sapper");
+          if (g.dug >= 4.4) {
+            delete S.buried[ownKey];
+            g.dug = 0; g.squash = 1.2;
+            popText(p.x + CELL / 2, p.y + 6, "DUG OUT", "#e8c05a");
+            burst(p.x + CELL / 2, p.y + CELL / 2, 12,
+                  { colors: ["#4a4150", "#b98a4e", "#e8c05a"], spread: 220, size: [1.4, 3.4] });
+            Sound.play("dig");
+          }
+        }
+        continue;
+      }
+      g.dug = 0;
       g.entombed = 0;
       g.cd -= dt;
       if (g.squash > 0) g.squash -= dt * 3.4;
@@ -933,21 +984,21 @@
         g.age = (g.age || 0) + dt;
         // more picks means a faster shaft as well as a bigger pull
         const warm = DIG_FLOOR + (1 - DIG_FLOOR) * Math.min(1, g.age * dn / DIG_WARM);
-        const rot = CFG.world === "rot" ? 0.25 : 1;
+        const seam = world().dig;
         const vk = g.col + "," + g.row;
         if (S.veins[vk] === undefined) S.veins[vk] = 1;
         const left = S.veins[vk];
         // Prospector cashes in on fresh ground, which pushes you to keep moving
         const rich = gobHas(g, "prospect") && left > 0.92 ? 3 : 1;
         const take = Math.max(0, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85)
-                                            * rot * left * rich));
+                                            * seam * left * rich));
         rate += take / DIG_EVERY;
         if (g.dcd === undefined) g.dcd = 1.2;
         g.dcd -= dt;
         if (g.dcd <= 0) {
           g.dcd = DIG_EVERY;
           // every pull takes a bite out of the pocket under it
-          const bore = (gobHas(g, "deepbore") ? 0.5 : 1)
+          const bore = world().bore * (gobHas(g, "deepbore") ? 0.5 : 1)
                        * Math.pow(0.71, gobSmall(g, "reseam"));
           S.veins[vk] = Math.max(0, S.veins[vk] - (1 / VEIN_PULLS) * dn * bore);
           if (take <= 0) {
@@ -1122,7 +1173,7 @@
             { colors: ["#c9ced8", "#8b93a2", "#5a5560"], spread: 280, size: [1.6, 4], life: [0.3, 0.7] });
       if (!f.byTrap) { kick(1.6); Sound.play("kill"); }
       // The Rot does not make you poorer, it changes where money comes from.
-      let purse = Math.round(FOES[f.type].purse * (CFG.world === "rot" ? 1.9 : 1));
+      let purse = Math.round(FOES[f.type].purse * world().purse);
       // A Tollkeeper standing in the lane takes its cut off the body.
       let toll = S.goblins.filter(g => g.row === f.lane && countOf(g, "tollkeep") > 0)
                           .reduce((a, g) => a + countOf(g, "tollkeep"), 0);
@@ -1130,7 +1181,7 @@
       const scav = S.goblins.filter(g => g.row === f.lane)
                             .reduce((a, g) => a + gobSmall(g, "scav"), 0);
       if (toll) {
-        purse = Math.round(purse * (1 + 1.6 * toll));
+        purse = Math.round(purse * (1 + 0.9 * toll));
         // and it has to be visible, or nobody believes it is working
         for (const g of S.goblins) {
           if (g.row !== f.lane || countOf(g, "tollkeep") === 0) continue;
@@ -1140,7 +1191,7 @@
           g.squash = 1;
         }
       }
-      purse += 6 * scav + (f.bounty || 0);
+      purse += 6 * scav + (f.bounty || 0);   // the shot's own cut, from a Tollkeeper in the body
       spill(f.x, y, purse);      // heroes still pay a little, immediately
     }
     S.foes = S.foes.filter(f => f.hp > 0);
@@ -1469,7 +1520,7 @@
     }
     // Gold seamed through the rock, thickening toward the far end. Nothing says
     // "deeper pays more" — you can see it in the ground before you place anything.
-    const rot = CFG.world === "rot";
+    const rot = world().dig < 1;
     for (let c = 0; c < COLS; c++) {
       const depth = c / (COLS - 1);
       const warm = (0.012 + depth * 0.055) * (rot ? 0.25 : 1);
@@ -2105,7 +2156,7 @@
   window.__hoard = {
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
-    nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, UPGRADES, SMALLS, place: tryPlace,
+    nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
     costOf,
     smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
     smallCount: (role, id) => smallOf(role, id),
@@ -2137,7 +2188,7 @@
       // chapter-3 opening buys too. The old +50% a chapter outran the +25% price rise, so
       // the deepest chapter started a third richer than the first while everything else
       // about it was meant to be harder.
-      else S.coins = Math.round(START_COINS * (1 + (CFG.chapter - 1) * 0.25));
+      else S.coins = Math.round(START_COINS * (1 + (CFG.chapter - 1) * 0.2));
       if (cfg.veins) S.veins = Object.assign({}, cfg.veins);
       CHAMBER_WAVES = wavesForChamber();
       S.bannerText = "CHAMBER " + CFG.chamber + " OF 3";
@@ -2194,13 +2245,13 @@
     { role: "keg",      cost: 16 },
     { role: "hollerer", cost: 22 },
   ];
-  const CHAPTERS_PER_WORLD = 3;
-  const SAVE = "hoard.v4";
+  const CHAPTERS = V.ROUTE.length;      // one route down, four chapters
+  const SAVE = "hoard.v5";
   let M, R = null;
   const newGob = role => ({ id: Math.random().toString(36).slice(2,8), role,
                             name: rnd(FIRST) + " " + rnd(LAST), runs: 0 });
   function fresh() {
-    const m = { scrip: 0, unlocked: ["chucker","digger","barricade"], warren: [], deepest: {} };
+    const m = { scrip: 0, unlocked: ["chucker","digger","barricade"], warren: [], deepest: 0 };
     for (const r of m.unlocked) for (let i = 0; i < 3; i++) m.warren.push(newGob(r));
     return m;
   }
@@ -2236,7 +2287,7 @@
     if (R) stat("Carried", R.scrip, "risk");
     stat("Warren", M.warren.length);
     if (R) stat("Depth", R.chapter + "-" + R.chamber, "gold");
-    else stat("Cleared", Object.keys(M.cleared || {}).length + "/3");
+    else stat("Deepest", (M.deepest || 0) + "/" + CHAPTERS);
     const sp = el("span"); sp.style.marginLeft = "auto";
     const wipe = el("button", "btn", "Wipe save");
     // Native confirm() is suppressed inside the sandboxed frame the game is viewed in,
@@ -2271,32 +2322,40 @@
     R = null;
     const out = [];
 
-    // 1. the decision, first and largest
+    // 1. the route, first and largest. There used to be three worlds to choose between,
+    // which meant the first decision of the game was between three things you had not
+    // seen yet. It is one line down now, and the panel's whole job is to show what is
+    // waiting on it - each chapter's rule, and which goblin answers it.
     const wp = el("div", "m-panel");
-    wp.append(el("h2", null, "Where to"));
+    wp.append(el("h2", null, "The descent"));
     const ws = el("div", "worlds");
-    for (const key in V.WORLDS) {
-      const w = V.WORLDS[key];
+    V.ROUTE.forEach((key, i) => {
+      const w = V.WORLDS[key], ch = i + 1;
       const b = el("button", "world");
-      const done = M.cleared && M.cleared[key];
-      const deep = M.deepest[key] || 0;
+      const reached = M.deepest >= ch;
       const head = el("span", "world-tier");
-      head.textContent = "Tier " + w.tier + " · " + CHAPTERS_PER_WORLD + " chapters"
-        + (done ? " · cleared" : deep ? " · reached " + deep : "");
-      if (done) head.style.color = "var(--goblin)";
+      head.textContent = "Chapter " + ch + " of " + CHAPTERS + " · 3 chambers"
+        + (M.deepest > ch ? " · cleared" : reached ? " · reached" : "");
+      if (M.deepest > ch) head.style.color = "var(--goblin)";
       b.append(head);
       b.append(el("span", "world-name", w.name));
       b.append(el("span", "world-rule", w.rule));
-      const known = M.unlocked.includes(w.answer);
-      const f = el("span", "world-fix",
-        (known ? "✓ " : "✦ meets you there · ") + V.UNITS[w.answer].name);
-      if (!known) f.style.color = "var(--gold)";
-      b.append(f);
-      // straight to packing — no confirmation step in between
-      b.onclick = () => { chosenWorld = key; meetLocal(key); muster(); };
+      if (w.answer) {
+        const known = M.unlocked.includes(w.answer);
+        const f = el("span", "world-fix",
+          (known ? "✓ " : "✦ meets you there · ") + V.UNITS[w.answer].name);
+        if (!known) f.style.color = "var(--gold)";
+        b.append(f);
+      }
+      // The route is a map, not a menu: every run starts at the top of it.
+      b.disabled = true;
       ws.append(b);
-    }
+    });
     wp.append(ws);
+    const go = el("button", "btn on", "Descend");
+    go.onclick = () => muster();
+    const gr = el("div", "m-row"); gr.append(go);
+    wp.append(gr);
     out.push(wp);
 
     // 2. the only thing scrip is for
@@ -2347,17 +2406,20 @@
   }
 
   // ---------------------------------------------------------------- muster
-  let chosenWorld = null;
+  const worldFor = ch => V.ROUTE[Math.min(ch, CHAPTERS) - 1];
   let picked = [];
-  const CREW_MAX = 5;
+  const CREW_MAX = 4;   // three locals join along the way
   function muster() {
     picked = [];
-    const w = V.WORLDS[chosenWorld];
+    const w = V.WORLDS[worldFor(1)];
     const p = el("div", "m-panel");
-    p.append(el("h2", null, w.name));
+    p.append(el("h2", null, "Who comes down"));
 
+    // You are packing for the whole descent now, not for one world, so the panel names
+    // what is coming rather than one rule you will have forgotten by chapter three.
     const rule = el("p", "m-note");
-    rule.innerHTML = "<b>" + w.rule + "</b>";
+    rule.innerHTML = "Four chapters. <b>" + V.ROUTE.slice(1).map(k => V.WORLDS[k].name).join(", ")
+      + "</b> each want a different goblin, and each hands you theirs when you get there.";
     p.append(rule);
 
     const seen = {}, c = el("div", "crew");
@@ -2377,9 +2439,9 @@
       b.append(el("span", "gob-role", V.UNITS[g.role].cost + " gold to place"));
       b.append(el("span", "gob-name", V.UNITS[g.role].name));
       b.append(el("span", "gob-note", ROLES[g.role].note));
-      if (V.UNITS[g.role].answers === chosenWorld) {
-        const tag = el("span", "gob-kit", "✦ answers " + w.name);
-        b.append(tag);
+      const answers = V.UNITS[g.role].answers;
+      if (answers && V.ROUTE.includes(answers)) {
+        b.append(el("span", "gob-kit", "✦ answers " + V.WORLDS[answers].name));
       }
       b.onclick = () => {
         const i = picked.indexOf(g);
@@ -2397,9 +2459,14 @@
     show([p, row]); redraw();
   }
 
-  // The world hands you its answer the first time you go there, permanently.
+  // A chapter hands you its answer the moment you arrive, and that goblin joins the run
+  // in progress. On a single route the crew is packed before you have seen chapters two
+  // through four, so a local who only turns up between runs would be a local you could
+  // never use where they matter.
   function meetLocal(world) {
     const role = V.WORLDS[world].answer;
+    if (!role) return null;
+    if (R && !R.crew.some(g => g.role === role)) R.crew.push(newGob(role));
     if (M.unlocked.includes(role)) return null;
     M.unlocked.push(role);
     for (let i = 0; i < 3; i++) M.warren.push(newGob(role));
@@ -2408,13 +2475,15 @@
   }
 
   function begin() {
-    R = { world: chosenWorld, chapter: 1, chamber: 1, scrip: 0, crew: picked.slice(),
+    R = { world: worldFor(1), chapter: 1, chamber: 1, scrip: 0, crew: picked.slice(),
           upgrades: {}, smalls: {}, board: null, gold: undefined, veins: null, cleared: false };
     for (const g of R.crew) g.runs++;
     save();
   }
 
   function enterChamber() {
+    R.world = worldFor(R.chapter);
+    meetLocal(R.world);
     metaEl.hidden = true; gameEl.hidden = false;
     window.scrollTo(0, 0);
     V.begin({ world: R.world, chapter: R.chapter, chamber: R.chamber,
@@ -2534,7 +2603,7 @@
       // small wage so a wiped-out lane can be answered
       R.board = board;
       R.veins = veins;
-      R.gold = Math.round(goldLeft * 0.35) + 40;
+      R.gold = Math.round(goldLeft * 0.45) + 60;
       save();
     });
   }
@@ -2574,8 +2643,7 @@
 
   function chapterCleared() {
     const got = unlockCheck({ world: R.world, chapter: R.chapter, clearedIn: R.world });
-    const deep = M.deepest[R.world] || 0;
-    if (R.chapter > deep) M.deepest[R.world] = R.chapter;
+    if (R.chapter > (M.deepest || 0)) M.deepest = R.chapter;
     save();
     const p = el("div", "m-panel");
     p.append(el("h2", null, "Chapter " + R.chapter + " cleared"));
@@ -2641,9 +2709,13 @@
 
     const row = el("div", "m-row");
     const out = el("button", "btn on", "Walk out with it"); out.onclick = bank;
-    if (R.chapter < CHAPTERS_PER_WORLD) {
-      const down = el("button", "btn danger",
-        "Deeper (" + (R.chapter + 1) + " of " + CHAPTERS_PER_WORLD + ")");
+    if (R.chapter < CHAPTERS) {
+      const nxt = V.WORLDS[worldFor(R.chapter + 1)];
+      // Naming what is below makes banking a real decision instead of a coin flip.
+      const tease = el("p", "m-note");
+      tease.innerHTML = "Below: <b>" + nxt.name + "</b> — " + nxt.rule;
+      p.append(tease);
+      const down = el("button", "btn danger", "Into " + nxt.name);
       down.onclick = () => {
         R.chapter++; R.chamber = 1; R.board = null; R.gold = undefined; R.veins = null; save();
         enterChamber();
@@ -2666,12 +2738,11 @@
     let bonus = 0;
     if (R.cleared) {
       bonus = 20;
-      M.cleared = M.cleared || {};
-      M.cleared[R.world] = true;
+      M.cleared = true;
     }
     M.scrip += R.scrip + bonus; save();
     const p = el("div", "m-panel");
-    p.append(el("h2", null, R.cleared ? V.WORLDS[R.world].name + " is finished" : "Home"));
+    p.append(el("h2", null, R.cleared ? "The descent is finished" : "Home"));
     const n = el("p", "m-note");
     n.innerHTML = "Banked <b>" + R.scrip + "</b>"
       + (bonus ? " and <b style='color:var(--gold)'>" + bonus + " for the bottom</b>" : "")
