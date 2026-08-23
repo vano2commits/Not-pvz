@@ -260,7 +260,7 @@
   </div>
 
   <div class="insp" id="insp">
-    <span class="insp-empty" id="insp-empty">Tap a goblin to inspect it, or dig it up.</span>
+    <span class="insp-empty" id="insp-empty">Tap a goblin to inspect it, or dig it up. Tap two to merge them &mdash; the first one walks over.</span>
     <span class="insp-body" id="insp-body" hidden>
       <b id="insp-name">&mdash;</b>
       <span class="insp-meta" id="insp-meta"></span>
@@ -456,6 +456,7 @@
     thrift: { name: "Thrifty",  note: "-8 gold to place", base: 70 },
   };
   let SM = {};                        // role -> { id: timesBought }
+  let GID = 0;                        // a walker needs to name the body it is joining
   const smallOf = (role, id) => (SM[role] && SM[role][id]) || 0;
   const gobSmall = (g, id) => g.parts.reduce((a, t) => Math.max(a, smallOf(t, id)), 0);
 
@@ -633,7 +634,7 @@
       laneLive: new Array(ROWS).fill(0)
         .map((_, r) => CFG.chamber > 1 || LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
       laneFlash: new Array(ROWS).fill(0),
-      selUnit: null, selGob: null,
+      selUnit: null, selGob: null, walkers: [],
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
       over: false, won: false, paused: false, t: 0, killed: 0, mined: 0, rate: 0,
     };
@@ -764,6 +765,10 @@
     hpFrac: clamp(g.hp / maxHpOf(g), 0.15, 1),
   }));
   function victory() {
+    // Anyone still on the road when the last hero drops digs in where they are, rather
+    // than being deleted by the timing of the win.
+    for (const w of S.walkers) landWalker(w);
+    S.walkers = [];
     S.over = true; S.won = true; Sound.play("win"); kick(14); flash(0.5);
     for (let i = 0; i < 5; i++)
       setTimeout(() => burst(rnd(250, 900), rnd(120, 380), 24,
@@ -782,6 +787,7 @@
   // ==================================================================== update
   function update(dt) {
     S.t += dt;
+    stepWalkers(dt);
     for (const k in S.cool) if (S.cool[k] > 0) S.cool[k] = Math.max(0, S.cool[k] - dt);
     if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 95);
     if (S.flash > 0) S.flash = Math.max(0, S.flash - dt * 3.4);
@@ -1117,7 +1123,7 @@
       }
 
       if (wall) {
-        wall.hp -= d.dps * dt; wall.hurtT = 0.13;
+        wall.hp -= d.dps * dt; wall.hurtT = 0.13; wall.lastHit = S.t;
         // Spiked bites back, which turns a wall into a slow weapon
         if (gobHas(wall, "spiked")) {
           f.hp -= d.dps * 0.85 * dt;
@@ -1180,23 +1186,34 @@
       if (!f.byTrap) { kick(1.6); Sound.play("kill"); }
       // The Rot does not make you poorer, it changes where money comes from.
       let purse = Math.round(FOES[f.type].purse * world().purse);
-      // A Tollkeeper standing in the lane takes its cut off the body.
-      let toll = S.goblins.filter(g => g.row === f.lane && countOf(g, "tollkeep") > 0)
-                          .reduce((a, g) => a + countOf(g, "tollkeep"), 0);
-      toll += S.goblins.filter(g => g.row === f.lane && gobHas(g, "sniffer")).length * 0.5;
+      // A Tollkeeper is a Digger that mines corpses, and it is paid on the same terms:
+      // the further right it stands the bigger the cut, and every cut draws down the same
+      // pocket a Digger would be draining. Kill income gets the geometry digging already
+      // had - the money is to the right and so is everything that kills you - instead of
+      // being a flat lane-wide multiplier that runs all level and never cares where it is.
       const scav = S.goblins.filter(g => g.row === f.lane)
                             .reduce((a, g) => a + gobSmall(g, "scav"), 0);
-      if (toll) {
-        purse = Math.round(purse * (1 + 0.9 * toll));
-        // and it has to be visible, or nobody believes it is working
-        for (const g of S.goblins) {
-          if (g.row !== f.lane || countOf(g, "tollkeep") === 0) continue;
-          const gp = cellOf(g);
-          popText(gp.x + CELL / 2, gp.y + 6, "TOLL", "#e8c05a");
-          ring(gp.x + CELL / 2, gp.y + CELL / 2, 44, "rgba(232,192,90,.7)", 3, 0.3);
-          g.squash = 1;
+      let toll = 0;
+      for (const g of S.goblins) {
+        if (g.row !== f.lane) continue;
+        const n = countOf(g, "tollkeep") + (gobHas(g, "sniffer") ? 0.5 : 0);
+        if (!n) continue;
+        const vk = g.col + "," + g.row;
+        if (S.veins[vk] === undefined) S.veins[vk] = 1;
+        const left = S.veins[vk];
+        const gp = cellOf(g);
+        if (left <= 0.02) {
+          popText(gp.x + CELL / 2, gp.y + 6, "NOTHING LEFT", "#8a8095");
+          continue;
         }
+        toll += n * (yieldAt(g.col) / RICH_MAX) * left;
+        S.veins[vk] = Math.max(0, left - (1 / VEIN_PULLS) * n * world().bore * 0.55);
+        // and it has to be visible, or nobody believes it is working
+        popText(gp.x + CELL / 2, gp.y + 6, "TOLL", "#e8c05a");
+        ring(gp.x + CELL / 2, gp.y + CELL / 2, 44, "rgba(232,192,90,.7)", 3, 0.3);
+        g.squash = 1;
       }
+      if (toll) purse = Math.round(purse * (1 + 2.2 * toll));
       purse += 6 * scav + (f.bounty || 0);   // the shot's own cut, from a Tollkeeper in the body
       spill(f.x, y, purse);      // heroes still pay a little, immediately
     }
@@ -1436,6 +1453,36 @@
         cx.globalAlpha = 1;
       }
     }
+  }
+
+  // A goblin on the road. Same body as on the grid but off its cell, jogging, and
+  // carrying a health bar - because the point of the march is that you watch it not
+  // always make it.
+  function drawWalker(w) {
+    const hop = Math.abs(Math.sin(w.step)) * 5;
+    cx.save();
+    cx.translate(w.x, w.y - hop);
+    cx.fillStyle = "rgba(0,0,0,.34)";
+    cx.beginPath(); cx.ellipse(0, 16 + hop, 15, 5, 0, 0, 6.284); cx.fill();
+    cx.fillStyle = w.hurtT > 0 ? "#fff3cf" : tintOf({ parts: w.parts });
+    cx.beginPath(); cx.ellipse(0, 0, 15, 16, 0, 0, 6.284); cx.fill();
+    cx.strokeStyle = "rgba(232,192,90,.85)"; cx.lineWidth = 2;
+    cx.beginPath(); cx.ellipse(0, 0, 16.5, 17.5, 0, 0, 6.284); cx.stroke();
+    cx.fillStyle = "#1a1520";
+    cx.beginPath(); cx.ellipse(-5, -3, 2.4, 2.8, 0, 0, 6.284); cx.fill();
+    cx.beginPath(); cx.ellipse(5, -3, 2.4, 2.8, 0, 0, 6.284); cx.fill();
+    // one pip per body it is carrying, so a three-part crew still reads as three
+    for (let i = 0; i < w.parts.length; i++) {
+      cx.fillStyle = "#e8c05a";
+      cx.beginPath();
+      cx.ellipse(-(w.parts.length - 1) * 4 + i * 8, -22, 2.6, 2.6, 0, 0, 6.284); cx.fill();
+    }
+    const fr = clamp(w.hp / w.maxHp, 0, 1);
+    if (fr < 1) {
+      cx.fillStyle = "rgba(0,0,0,.55)"; cx.fillRect(-16, 22, 32, 3.5);
+      cx.fillStyle = fr < 0.35 ? "#d1553f" : "#6fbf5b"; cx.fillRect(-16, 22, 32 * fr, 3.5);
+    }
+    cx.restore();
   }
 
   function drawFoe(f) {
@@ -1782,6 +1829,7 @@
     }
 
     S.foes.forEach(drawFoe);
+    S.walkers.forEach(drawWalker);
 
     for (const p of S.parts) {
       cx.globalAlpha = clamp(p.life * 2.6, 0, 1);
@@ -1908,7 +1956,7 @@
 
     S.coins -= costOf(key);
     // hp has to come from maxHpOf, not the raw stat, or an upgraded body spawns hurt
-    const born = { parts: [key], col, row, hp: 0, born: S.t, age: 0,
+    const born = { id: ++GID, parts: [key], col, row, hp: 0, born: S.t, age: 0,
                      cd: 0.5, dcd: 1.2,
                      squash: 0, land: 1, recoil: 0, hurtT: 0, wind: 0 };
     born.hp = maxHpOf(born);
@@ -1925,6 +1973,11 @@
 
   // Carrying one goblin into another. Costs nothing — you already paid for both — and
   // it is the only way to recover a Digger whose pocket has run dry.
+  // Merging two bodies already on the board is a march, not a teleport. The goblin
+  // leaves its cell and walks the lanes to the one it is joining, and anything whose
+  // lane it crosses gets a swing at it on the road. Recycling a worked-out Digger from
+  // column 6 is therefore a decision about the map rather than a free tidy-up.
+  const WALK_SPEED = 118;
   function fuseInPlace(src, dst) {
     if (src.parts.length + dst.parts.length > MAX_PARTS) {
       Sound.play("deny");
@@ -1933,9 +1986,92 @@
       return false;
     }
     if (!laneIsOpen(dst.row) || S.buried[dst.col + "," + dst.row]) { Sound.play("deny"); return false; }
-    const keptFrac = clamp(src.hp / maxHpOf(src), 0.2, 1);
-    for (const t of src.parts) dst.parts.push(t);
+    const from = cellOf(src);
     S.goblins = S.goblins.filter(g => g !== src);
+    S.walkers.push({ parts: src.parts.slice(), hp: src.hp, maxHp: maxHpOf(src),
+                     age: src.age || 0, spent: spentOn(src),
+                     x: from.x + CELL / 2, y: from.y + CELL * 0.55,
+                     toId: dst.id, step: 0, hurtT: 0 });
+    const gp = cellOf(dst);
+    ring(from.x + CELL / 2, from.y + CELL / 2, 60, "rgba(232,192,90,.6)", 3, 0.3);
+    ring(gp.x + CELL / 2, gp.y + CELL / 2, 70, "rgba(232,192,90,.5)", 2.5, 0.45);
+    Sound.play("place");
+    S.selGob = null;
+    renderInspector();
+    return true;
+  }
+
+  // The road. A walker is off the grid, so it does not shoot, does not dig and nothing
+  // stands behind it - it is a body crossing open ground and that is the whole point.
+  function stepWalkers(dt) {
+    for (const w of S.walkers) {
+      if (w.hurtT > 0) w.hurtT -= dt;
+      const dst = S.goblins.find(g => g.id === w.toId && g.hp > 0);
+      if (!dst) {                        // its destination died while it was on the way
+        w.stranded = (w.stranded || 0) + dt;
+        if (w.stranded > 0.35) { landWalker(w); w.gone = true; }
+        continue;
+      }
+      const gp = cellOf(dst);
+      const tx = gp.x + CELL / 2, ty = gp.y + CELL * 0.55;
+      const dx = tx - w.x, dy = ty - w.y, d = Math.hypot(dx, dy);
+      w.step += dt * 9;
+      if (d > 3) { w.x += dx / d * WALK_SPEED * dt; w.y += dy / d * WALK_SPEED * dt; }
+      const lane = Math.floor((w.y - OY) / CELL);
+      for (const f of S.foes) {
+        if (f.hp <= 0 || f.lane !== lane) continue;
+        if (Math.abs(f.x - w.x) > CELL * 0.55) continue;
+        w.hp -= FOES[f.type].dps * dt;
+        w.hurtT = 0.14;
+        if (Math.random() < dt * 6)
+          burst(w.x, w.y, 2, { colors: ["#d1553f", "#e8c05a"], spread: 110,
+                               size: [1.2, 2.4], life: [0.12, 0.3] });
+      }
+      if (w.hp <= 0) {
+        popText(w.x, w.y - 8, "LOST ON THE ROAD", "#d1553f");
+        burst(w.x, w.y, 16, { colors: ["#d1553f", "#8b93a2", "#4a4150"], spread: 260 });
+        Sound.play("kill"); kick(4);
+        w.gone = true;
+        continue;
+      }
+      if (d <= 3) { arrive(w, dst); w.gone = true; }
+    }
+    S.walkers = S.walkers.filter(w => !w.gone);
+  }
+
+  // Its destination died under it. There is no wagon to climb back into here, so it digs
+  // in where it stands rather than evaporating - the nearest open cell to the spot it
+  // reached. Losing the goblin you were merging into should not lose you both.
+  function landWalker(w) {
+    const lane = clamp(Math.floor((w.y - OY) / CELL), 0, ROWS - 1);
+    const col = clamp(Math.round((w.x - OX - CELL / 2) / CELL), 0, COLS - 1);
+    let best = null;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (!laneIsOpen(r) || S.buried[c + "," + r] || gobAt(c, r)) continue;
+      const d = Math.abs(c - col) + Math.abs(r - lane) * 1.5;
+      if (!best || d < best.d) best = { c, r, d };
+    }
+    if (!best) {                        // nowhere at all to stand: pay it out instead
+      const back = Math.round(w.spent * 0.5);
+      S.coins += back;
+      popText(w.x, w.y - 6, "+" + back, "#e8c05a");
+      bumpCoins();
+      return;
+    }
+    const g = { id: ++GID, parts: w.parts.slice(), col: best.c, row: best.r, hp: 0,
+                born: S.t, age: w.age, cd: 0.5, dcd: 1.2, squash: 1.2, land: 1,
+                recoil: 0, hurtT: 0, wind: 0 };
+    g.hp = clamp(w.hp, 12, maxHpOf(g));
+    S.goblins.push(g);
+    const gp = cellOf(g);
+    popText(gp.x + CELL / 2, gp.y + 4, "DUG IN", "#e8c05a");
+    ring(gp.x + CELL / 2, gp.y + CELL / 2, 54, "rgba(232,192,90,.6)", 2.5, 0.34);
+    Sound.play("place");
+  }
+
+  function arrive(w, dst) {
+    const keptFrac = clamp(w.hp / w.maxHp, 0.2, 1);
+    for (const t of w.parts) dst.parts.push(t);
     // the one that walked over arrives as hurt as it was
     dst.hp = Math.max(dst.hp, maxHpOf(dst) * Math.min(1, (dst.hp / maxHpOf(dst) + keptFrac) / 2));
     dst.hp = clamp(dst.hp, 12, maxHpOf(dst));
@@ -1946,9 +2082,7 @@
     ring(gp.x + CELL / 2, gp.y + CELL / 2, 92, "rgba(255,243,207,.8)", 4, 0.4);
     popText(gp.x + CELL / 2, gp.y + 4, nameOf(dst).toUpperCase(), "#fff3cf");
     kick(8); stop(0.07); Sound.play("merge");
-    S.selGob = null;
     renderInspector();
-    return true;
   }
 
   // Dig one up. Free for a moment in case of a misclick, then half back.
@@ -2167,6 +2301,7 @@
     smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
     smallCount: (role, id) => smallOf(role, id),
     remove: removeGoblin,
+    fuse: fuseInPlace,
     veinAt: (c, r) => S.veins[c + "," + r] === undefined ? 1 : S.veins[c + "," + r],
     get cfg() { return CFG; },
     // Start a chamber for the meta layer. cfg = { world, chapter, chamber, roles }.
@@ -2182,7 +2317,7 @@
       // did not spend is still in your pocket.
       if (cfg.board && cfg.board.length) {
         for (const b of cfg.board) {
-          const g = { parts: b.parts.slice(), col: b.col, row: b.row, hp: 0, born: -99,
+          const g = { id: ++GID, parts: b.parts.slice(), col: b.col, row: b.row, hp: 0, born: -99,
                       age: b.age || 0, cd: 0.5, dcd: 1.2, squash: 0, land: 0,
                       recoil: 0, hurtT: 0, wind: 0 };
           g.hp = Math.max(12, maxHpOf(g) * (b.hpFrac === undefined ? 1 : b.hpFrac));
