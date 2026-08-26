@@ -184,6 +184,16 @@
      actually deciding about - the reward is why you are willing to. */
   .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
            margin: 12px 0 4px; }
+  .feat-head { font-family: var(--display); font-size: 13px; letter-spacing: .16em;
+               text-transform: uppercase; color: var(--ink-dim); font-weight: normal;
+               margin: 16px 0 0; }
+  .feats { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+  .feat { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px;
+          background: var(--stone); border: 1px solid #3b3340;
+          border-left: 3px solid var(--goblin); border-radius: 3px; }
+  .feat b { font-family: var(--display); font-size: 16px; letter-spacing: .03em;
+            color: var(--goblin); }
+  .feat span { font-size: 12.5px; color: var(--ink-dim); }
   .route { display: flex; flex-direction: column; gap: 5px; text-align: left;
            padding: 15px 16px 16px; cursor: pointer; color: var(--ink);
            background: linear-gradient(180deg, var(--stone-lit), var(--stone));
@@ -308,25 +318,35 @@
 
   // ===================================================================== audio
   const Sound = (() => {
-    let ctx = null, master = null, muted = false, noiseBuf = null, lastClink = 0;
+    let ctx = null, master = null, muted = false, noiseBuf = null, lastClink = -1;
     function wake() {
       if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       ctx = new AC();
-      master = ctx.createGain(); master.gain.value = 0.62;
+      master = ctx.createGain(); master.gain.value = 0.9;
+      // 2600 Hz took the texture off everything and left the oscillator underneath, which
+      // is what "electric" meant. The brightness that actually hurts sits around 1.8 kHz
+      // and the peaking filter below handles that on its own.
       const warm = ctx.createBiquadFilter();
-      warm.type = "lowpass"; warm.frequency.value = 2600; warm.Q.value = 0.5;
+      warm.type = "lowpass"; warm.frequency.value = 7200; warm.Q.value = 0.4;
       const tame = ctx.createBiquadFilter();
       tame.type = "peaking"; tame.frequency.value = 1800; tame.Q.value = 1.1; tame.gain.value = -6;
       const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -20; comp.knee.value = 26; comp.ratio.value = 6;
-      comp.attack.value = 0.004; comp.release.value = 0.2;
+      comp.threshold.value = -14; comp.knee.value = 22; comp.ratio.value = 9;
+      comp.attack.value = 0.003; comp.release.value = 0.18;
       master.connect(tame); tame.connect(warm); warm.connect(comp); comp.connect(ctx.destination);
-      const n = ctx.sampleRate * 1.1;
+      const n = ctx.sampleRate * 1.6;
       noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
-      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      // brown-ish rather than white: rock and dirt have far more low end than a hiss,
+      // and white noise through a narrow band is what made these read as synthetic
+      let last = 0;
+      for (let i = 0; i < n; i++) {
+        const w = Math.random() * 2 - 1;
+        last = (last + 0.035 * w) / 1.035;
+        d[i] = last * 3.6 + w * 0.35;
+      }
     }
     const rr = (a, b) => a + Math.random() * (b - a);
     function tone({ type = "sine", f0, f1, dur, gain = 0.3, delay = 0 }) {
@@ -356,36 +376,54 @@
       select: () => tone({ type: "triangle", f0: rr(620, 680), f1: rr(880, 940), dur: 0.07, gain: 0.1 }),
       deny:   () => tone({ type: "triangle", f0: 170, f1: 96, dur: 0.17, gain: 0.14 }),
       hover:  () => tone({ type: "sine", f0: rr(1100, 1250), dur: 0.03, gain: 0.03 }),
-      place:  () => { tone({ type: "sine", f0: rr(150, 175), f1: 55, dur: 0.19, gain: 0.4 });
-                      hiss({ dur: 0.17, gain: 0.2, f0: 900, f1: 180 }); },
-      throw:  () => { hiss({ dur: 0.07, gain: 0.1, type: "bandpass", f0: rr(1500, 2100), q: 1.4 });
-                      tone({ type: "triangle", f0: rr(400, 470), f1: 190, dur: 0.08, gain: 0.08 }); },
-      hit:    () => { hiss({ dur: 0.06, gain: 0.16, type: "bandpass", f0: rr(900, 1400), q: 1.2 });
-                      tone({ type: "triangle", f0: rr(190, 240), f1: 78, dur: 0.07, gain: 0.13 }); },
-      kill:   () => { hiss({ dur: 0.26, gain: 0.2, f0: 1100, f1: 110 });
-                      tone({ type: "triangle", f0: rr(280, 330), f1: 66, dur: 0.24, gain: 0.16 }); },
+      // Everything below is noise with a thump under it, not a tone with a whisper of
+      // noise over it. Measured as spectral flatness the old versions all sat under 0.06,
+      // which is a sine wave wearing a hat; rock, dirt and wood do not sound like that.
+      place:  () => { hiss({ dur: 0.3, gain: 0.58, type: "bandpass",
+                             f0: rr(1400, 2000), f1: rr(280, 400), q: 0.4 });
+                      tone({ type: "sine", f0: rr(140, 180), f1: 52, dur: 0.13, gain: 0.13 }); },
+      throw:  () => { hiss({ dur: 0.13, gain: 0.34, type: "bandpass",
+                             f0: rr(2400, 3600), f1: rr(700, 1000), q: 0.55 });
+                      tone({ type: "sine", f0: rr(300, 380), f1: 150, dur: 0.06, gain: 0.05 }); },
+      hit:    () => { hiss({ dur: 0.1, gain: 0.42, type: "bandpass",
+                             f0: rr(1700, 2600), f1: rr(420, 600), q: 0.7 });
+                      tone({ type: "sine", f0: rr(170, 230), f1: 74, dur: 0.06, gain: 0.09 }); },
+      kill:   () => { hiss({ dur: 0.36, gain: 0.5, type: "bandpass",
+                             f0: rr(1800, 2600), f1: rr(220, 320), q: 0.4 });
+                      tone({ type: "sine", f0: rr(240, 300), f1: 60, dur: 0.14, gain: 0.06 }); },
       // a pick going into rock, then the coin
-      dig:    () => { hiss({ dur: 0.09, gain: 0.22, type: "bandpass", f0: rr(900, 1300), q: 2.2 });
-                      tone({ type: "triangle", f0: rr(180, 220), f1: 90, dur: 0.1, gain: 0.16 }); },
+      dig:    () => { hiss({ dur: 0.16, gain: 0.46, type: "bandpass",
+                             f0: rr(2200, 3200), f1: rr(380, 560), q: 0.8 });
+                      tone({ type: "sine", f0: rr(160, 210), f1: 82, dur: 0.08, gain: 0.11 }); },
       coin:   () => { if (!ctx || muted) return;
                       const now = ctx.currentTime;
                       if (now - lastClink < 0.03) return;
                       lastClink = now;
                       const b = rr(1500, 1800);
-                      tone({ type: "triangle", f0: b, dur: 0.06, gain: 0.09 });
-                      tone({ type: "triangle", f0: b * 1.5, dur: 0.1, gain: 0.07, delay: 0.04 }); },
+                      hiss({ dur: 0.05, gain: 0.12, type: "bandpass", f0: b * 1.7, q: 1.1 });
+                      tone({ type: "triangle", f0: b, dur: 0.06, gain: 0.08 });
+                      tone({ type: "triangle", f0: b * 1.5, dur: 0.1, gain: 0.06, delay: 0.04 }); },
       // a bow creaking then loosing, and a ballista that sounds like furniture
-      bow:    () => { hiss({ dur: 0.1, gain: 0.09, type: "bandpass", f0: rr(500, 700), q: 2 });
-                      tone({ type: "triangle", f0: rr(320, 380), f1: 150, dur: 0.16, gain: 0.13 }); },
-      bolt:   () => { tone({ type: "triangle", f0: 150, f1: 62, dur: 0.3, gain: 0.26 });
-                      hiss({ dur: 0.16, gain: 0.16, type: "bandpass", f0: 800, f1: 240, q: 1.4 });
-                      tone({ type: "sine", f0: 900, f1: 380, dur: 0.2, gain: 0.08, delay: 0.02 }); },
+      bow:    () => { hiss({ dur: 0.17, gain: 0.36, type: "bandpass",
+                             f0: rr(1600, 2300), f1: rr(500, 700), q: 0.8 });
+                      tone({ type: "sine", f0: rr(300, 360), f1: 140, dur: 0.12, gain: 0.08 }); },
+      bolt:   () => { hiss({ dur: 0.3, gain: 0.52, type: "bandpass",
+                             f0: rr(1500, 2200), f1: rr(240, 340), q: 0.4 });
+                      tone({ type: "sine", f0: rr(130, 165), f1: 58, dur: 0.17, gain: 0.09 }); },
+      // the one the demo is selling, so it gets a chord rather than a click
+      newbody: () => { [0, 0.07, 0.14, 0.21].forEach((d, i) =>
+                         tone({ type: "triangle", f0: [523, 659, 784, 1175][i],
+                                dur: 0.55, gain: 0.15, delay: d }));
+                       tone({ type: "sine", f0: 98, f1: 44, dur: 0.5, gain: 0.4 });
+                       hiss({ dur: 0.5, gain: 0.2, type: "bandpass",
+                              f0: 700, f1: 3600, q: 0.6, delay: 0.03 }); },
       merge:  () => { [0, 0.055, 0.11].forEach((d, i) =>
                         tone({ type: "triangle", f0: [523, 659, 880][i], dur: 0.3, gain: 0.16, delay: d }));
                       tone({ type: "sine", f0: 120, f1: 48, dur: 0.34, gain: 0.42 });
                       hiss({ dur: 0.4, gain: 0.14, type: "bandpass", f0: 900, f1: 4200, q: 0.7, delay: 0.02 }); },
-      trap:   () => { hiss({ dur: 0.1, gain: 0.3, type: "bandpass", f0: 1500, q: 4 });
-                      tone({ type: "triangle", f0: 155, f1: 44, dur: 0.3, gain: 0.34 }); },
+      trap:   () => { hiss({ dur: 0.26, gain: 0.68, type: "bandpass",
+                             f0: rr(1600, 2400), f1: rr(280, 400), q: 0.35 });
+                      tone({ type: "sine", f0: rr(145, 175), f1: 46, dur: 0.18, gain: 0.11 }); },
       wave:   () => { tone({ type: "triangle", f0: 88, f1: 131, dur: 0.9, gain: 0.2 });
                       tone({ type: "sine", f0: 176, f1: 262, dur: 0.8, gain: 0.09, delay: 0.12 }); },
       win:    () => [523, 659, 784, 1046].forEach((f, i) =>
@@ -395,6 +433,7 @@
                       hiss({ dur: 1.1, gain: 0.14, f0: 500, f1: 70 }); },
     };
     return { wake, play(k) { if (!ctx) return; (lib[k] || (() => {}))(); },
+             reset() { ctx = null; master = null; noiseBuf = null; lastClink = 0; },
              toggle() { muted = !muted; return !muted; } };
   })();
 
@@ -536,6 +575,26 @@
     "digger+sapper+sapper":          "Tunnel Gang",
     "sapper+sapper+sapper":          "Tunnel Crew",
   };
+  // A body you have never made before is the moment the demo is selling, so it gets a
+  // beat of its own: the game hitches, the name lands, and the ledger fills a slot.
+  function noteBody(g) {
+    const key = partsKey(g);
+    if (S.seen[key]) return false;
+    S.seen[key] = true;
+    const gp = cellOf(g);
+    stop(0.16); kick(11); flash(0.2);
+    S.bannerText = nameOf(g).toUpperCase();
+    S.banner = 1.9;
+    S.newBody = 1;
+    ring(gp.x + CELL / 2, gp.y + CELL / 2, 128, "rgba(255,243,207,.9)", 5, 0.55);
+    ring(gp.x + CELL / 2, gp.y + CELL / 2, 74, "rgba(232,192,90,.85)", 3, 0.42);
+    burst(gp.x + CELL / 2, gp.y + CELL / 2, 30,
+          { colors: ["#fff3cf", "#e8c05a", "#8ed07a", tintOf(g)], spread: 380, size: [1.8, 5] });
+    popText(gp.x + CELL / 2, gp.y - 12, "NEW", "#8ed07a");
+    Sound.play("newbody");
+    return true;
+  }
+
   function nameOf(g) {
     return BODY[partsKey(g)] || UNITS[g.parts[0]].name;
   }
@@ -693,6 +752,9 @@
         .map((_, r) => CFG.chamber > 1 || LANE_ORDER.indexOf(r) < 3 ? 1 : 0),
       laneFlash: new Array(ROWS).fill(0),
       selUnit: null, selGob: null, walkers: [],
+      // What the run has built, what it has lost, and which lanes did the work. The
+      // ending is made of these.
+      seen: {}, goblinDeaths: 0, killLanes: {}, chuckerLanes: {},
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
       over: false, won: false, paused: false, t: 0, killed: 0, mined: 0, rate: 0,
     };
@@ -854,6 +916,14 @@
     parts: g.parts.slice(), col: g.col, row: g.row, age: g.age || 0,
     hpFrac: clamp(g.hp / maxHpOf(g), 0.15, 1),
   }));
+  // What the chamber is worth to the ending screen.
+  function report() {
+    const paid = Object.keys(S.killLanes)
+                       .filter(r => !S.chuckerLanes[r]).map(Number);
+    return { seen: Object.assign({}, S.seen), deaths: S.goblinDeaths,
+             kills: S.killed, paidForItself: paid.length > 0 };
+  }
+
   function victory() {
     // Anyone still on the road when the last hero drops digs in where they are, rather
     // than being deleted by the timing of the win.
@@ -865,13 +935,15 @@
         { colors: ["#e8c05a", "#fff3cf", "#8ed07a"], spread: 320 }), i * 170);
     if (onChamberEnd)
       setTimeout(() => onChamberEnd(true, Math.round(S.coins), survivors(),
-                                    Object.assign({}, S.veins), SM), 1500);
+                                    Object.assign({}, S.veins), SM, report()), 1500);
   }
   function defeat() {
     if (S.over) return;
     S.over = true; S.won = false; Sound.play("lose"); kick(20); stop(0.14); flash(0.55);
     burst(OX, H / 2, 40, { colors: ["#e8c05a", "#8a7134", "#d1553f"], spread: 420 });
-    if (onChamberEnd) setTimeout(() => onChamberEnd(false, Math.round(S.coins)), 1800);
+    if (onChamberEnd)
+      setTimeout(() => onChamberEnd(false, Math.round(S.coins), survivors(),
+                                    Object.assign({}, S.veins), SM, report()), 1800);
   }
 
   // ==================================================================== update
@@ -966,6 +1038,7 @@
     let rate = 0;
     for (const g of S.goblins) {
       if (g.hp <= 0) continue;
+      if (countOf(g, "chucker") > 0) S.chuckerLanes[g.row] = true;
       const p = cellOf(g);
       // under a rockfall: still there, still soaks hits, but not working
       const ownKey = g.col + "," + g.row;
@@ -1121,6 +1194,7 @@
       }
     }
     S.rate = rate;
+    for (const g of S.goblins) if (g.hp <= 0 && !g.mourned) { g.mourned = true; S.goblinDeaths++; }
     S.goblins = S.goblins.filter(g => g.hp > 0);
     if (S.selGob && S.selGob.hp <= 0) S.selGob = null;
 
@@ -1325,7 +1399,7 @@
 
     for (const f of S.foes) {
       if (f.hp > 0 || f.dead) continue;
-      f.dead = true; S.killed++;
+      f.dead = true; S.killed++; S.killLanes[f.lane] = true;
       const y = laneY(f.lane) + CELL * 0.5;
       burst(f.x, y, f.byTrap ? 8 : 14,
             { colors: ["#c9ced8", "#8b93a2", "#5a5560"], spread: 280, size: [1.6, 4], life: [0.3, 0.7] });
@@ -1654,9 +1728,14 @@
     cx.save();
     cx.translate(f.x, y + bob);
     cx.scale(scale * (1 + sq * 0.22), scale * (1 - sq * 0.2));
+    // Scouts and Runners are lean, so their torso is narrow as well as small. Shape, not
+    // size: a scaled-down copy of the same outline still reads as the same hero.
+    const bw = f.type === "scout" ? 0.72 : f.type === "runner" ? 0.76 : 1;
     const paint = flat => {
       cx.fillStyle = flat || tint;
-      cx.beginPath(); cx.moveTo(-13, 26); cx.lineTo(-9, -8); cx.lineTo(9, -8); cx.lineTo(13, 26); cx.closePath(); cx.fill();
+      cx.beginPath();
+      cx.moveTo(-13 * bw, 26); cx.lineTo(-9 * bw, -8);
+      cx.lineTo(9 * bw, -8); cx.lineTo(13 * bw, 26); cx.closePath(); cx.fill();
       if (f.bleeding) {
         cx.fillStyle = flat || "#9a8f84";
         cx.beginPath(); cx.arc(0, -13, 9, 0, 6.284); cx.fill();
@@ -1679,6 +1758,26 @@
       if (f.type === "runner" && !f.bleeding) {
         cx.fillStyle = flat || "#c2a45e";
         cx.beginPath(); cx.rect(-11, 2, 22, 4); cx.fill();
+        // hair streaming back off a bare head: a wedge behind the skull, nothing on top
+        cx.fillStyle = flat || "#8a7a55";
+        cx.beginPath();
+        cx.moveTo(6, -22); cx.lineTo(26, -15); cx.lineTo(24, -7); cx.lineTo(6, -10);
+        cx.closePath(); cx.fill();
+      }
+      if (f.type === "squire" && !f.bleeding) {
+        // a round shield on the near arm - the plainest hero needs an outline too, or it
+        // is only "the one with nothing on it", which is not a silhouette
+        cx.fillStyle = flat || "#6d6a76";
+        cx.beginPath(); cx.arc(-16, 8, 11, 0, 6.284); cx.fill();
+        cx.fillStyle = flat || "#3f3d47";
+        cx.beginPath(); cx.arc(-16, 8, 4.2, 0, 6.284); cx.fill();
+      }
+      if (f.type === "scout" && !f.bleeding) {
+        // a plume, twice the height of the head, leaning with the run
+        cx.strokeStyle = flat || "#8a3f2f"; cx.lineWidth = 4; cx.lineCap = "round";
+        cx.beginPath(); cx.moveTo(-1, -22); cx.quadraticCurveTo(9, -40, 20, -44); cx.stroke();
+        cx.fillStyle = flat || "#d1553f";
+        cx.beginPath(); cx.ellipse(21, -44, 6, 3.4, -0.4, 0, 6.284); cx.fill();
       }
       if (f.type === "pavise" && !f.bleeding) {
         cx.fillStyle = flat || "#5b6472";
@@ -1687,6 +1786,12 @@
         cx.beginPath(); cx.rect(-19, -14, 8, 8); cx.fill();
       }
       if (f.type === "sergeant" && !f.bleeding) {
+        // pauldrons: a wide flat shelf across the shoulders, so the top of the shape is
+        // square where every other hero's is round
+        cx.fillStyle = flat || "#8a6234";
+        cx.beginPath(); cx.rect(-21, -9, 42, 10); cx.fill();
+        cx.fillStyle = flat || "#d3a468";
+        cx.beginPath(); cx.rect(-21, -9, 42, 3); cx.fill();
         cx.fillStyle = flat || "#8a6234";
         cx.beginPath(); cx.moveTo(-10, -4); cx.lineTo(10, -4); cx.lineTo(8, 16); cx.lineTo(-8, 16); cx.closePath(); cx.fill();
         cx.fillStyle = flat || "#d3a468"; cx.fillRect(-10, -4, 20, 3);
@@ -2123,6 +2228,7 @@
       ring(gp.x + CELL / 2, gp.y + CELL / 2, 96, "rgba(255,243,207,.85)", 4, 0.4);
       popText(gp.x + CELL / 2, gp.y + 4, nameOf(occ).toUpperCase(), "#fff3cf");
       kick(9); stop(0.08); flash(0.24); Sound.play("merge");
+      noteBody(occ);
       S.cool[key] = rechargeOf(key);
       S.selUnit = null; renderRack();
       renderInspector();
@@ -2136,6 +2242,7 @@
                      squash: 0, land: 1, recoil: 0, hurtT: 0, wind: 0 };
     born.hp = maxHpOf(born);
     S.goblins.push(born);
+    noteBody(born);
     const gx = OX + col * CELL + CELL / 2, gy = OY + row * CELL + CELL * 0.6;
     burst(gx, gy + 18, 10, { colors: ["#4a4150", "#3b3340", "#5a5060"], spread: 180,
                              size: [1.4, 3.4], gravity: 520, life: [0.18, 0.4] });
@@ -2239,6 +2346,7 @@
     g.hp = clamp(w.hp, 12, maxHpOf(g));
     S.goblins.push(g);
     const gp = cellOf(g);
+    noteBody(g);
     popText(gp.x + CELL / 2, gp.y + 4, "DUG IN", "#e8c05a");
     ring(gp.x + CELL / 2, gp.y + CELL / 2, 54, "rgba(232,192,90,.6)", 2.5, 0.34);
     Sound.play("place");
@@ -2257,6 +2365,7 @@
     ring(gp.x + CELL / 2, gp.y + CELL / 2, 92, "rgba(255,243,207,.8)", 4, 0.4);
     popText(gp.x + CELL / 2, gp.y + 4, nameOf(dst).toUpperCase(), "#fff3cf");
     kick(8); stop(0.07); Sound.play("merge");
+    noteBody(dst);
     renderInspector();
   }
 
@@ -2471,6 +2580,10 @@
     nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
     BODY, BODY_KEYS: Object.keys(BODY), BODY_COUNT: Object.keys(BODY).length,
     ROUTE_CARDS,
+    reportNow: () => report(),
+    FOES,
+    audioWake: () => Sound.wake(), audioPlay: k => Sound.play(k),
+    audioReset: () => Sound.reset(),
     get WAVE_COUNT() { return CHAMBER_WAVES.length; },
     costOf,
     smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
@@ -2512,6 +2625,7 @@
       // pockets are dead, so the gold buys less standing room than the number suggests.
       else S.coins = START_COINS + (Math.min(CFG.chamber, CHAMBERS) - 1) * 160;
       if (cfg.veins) S.veins = Object.assign({}, cfg.veins);
+      if (cfg.seen) S.seen = Object.assign({}, cfg.seen);
       CHAMBER_WAVES = wavesForChamber();
       S.bannerText = "CHAMBER " + CFG.chamber + " OF 3";
       S.banner = 2.4;
@@ -2581,7 +2695,8 @@
   const ROUTE_AT = [2, 4];      // a fork after chamber 2 and after chamber 4
   function begin() {
     R = { chamber: 1, board: null, veins: null, gold: undefined,
-          smalls: {}, upgrades: {}, built: {}, dead: 0,
+          smalls: {}, upgrades: {}, built: {}, dead: 0, kills: 0,
+          feats: {}, cleanChambers: 0,
           shut: [], flood: [], rubbleEvery: 1, speedMul: 1, drain: 1, taken: [] };
   }
 
@@ -2598,21 +2713,40 @@
     window.scrollTo(0, 0);
     V.begin({ world: worldOf(R.chamber), chapter: 1, chamber: R.chamber,
               roles: rosterFor(R.chamber), upgrades: R.upgrades, smalls: R.smalls,
-              board: R.board, carryGold: R.gold, veins: R.veins,
+              board: R.board, carryGold: R.gold, veins: R.veins, seen: R.built,
               shut: R.shut, flood: R.flood,
               rubbleEvery: R.rubbleEvery, speedMul: R.speedMul }, chamberDone);
   }
 
-  function chamberDone(won, goldLeft, board, veins) {
+  function chamberDone(won, goldLeft, board, veins, smalls, rep) {
     // The ledger is the record of what you made, so it is written whether you held the
     // chamber or not.
+    if (rep) {
+      R.built = Object.assign(R.built, rep.seen);
+      R.kills += rep.kills;
+      R.dead += rep.deaths;
+      if (rep.paidForItself) R.feats.paid = true;
+      if (won && rep.deaths === 0) { R.cleanChambers++; R.feats.scratch = true; }
+    }
     for (const b of (board || [])) R.built[[...b.parts].sort().join("+")] = true;
+    if (R.built["barricade+barricade+barricade"]) R.feats.wall = true;
+    if (Object.keys(R.built).length >= 5) R.feats.read = true;
     if (!won) return ending(false);
     R.veins = veins;                       // drained ground stays drained
     if (R.chamber >= CHAMBERS) return ending(true);
     if (ROUTE_AT.includes(R.chamber)) return fork();
     held();
   }
+
+  // Recognition, not unlocks. They cost nothing to build - no unlock content, no save
+  // file - and they still produce the sentence one player repeats to another, which is
+  // the whole point of a feat.
+  const FEATS = [
+    { id: "wall",    name: "Great Wall",     note: "three Barricades in one body" },
+    { id: "scratch", name: "Not a scratch",  note: "held a chamber without losing a goblin" },
+    { id: "paid",    name: "Paid for itself", note: "won a lane that never had a Chucker in it" },
+    { id: "read",    name: "Well read",      note: "five different bodies in one run" },
+  ];
 
   function held() {
     const p = el("div", "m-panel");
@@ -2693,19 +2827,44 @@
     return wrap;
   }
 
+  // Most players will not beat the Reeve first time, so the loss screen is the screen
+  // most people see. It is the same screen as the win with one line changed, and it
+  // leads with what you built rather than with where you stopped.
   function ending(won) {
     const p = el("div", "m-panel");
     p.append(el("h2", null, won ? "The hoard is still yours" : "They reached the caravan"));
     const n = el("p", "m-note");
     n.innerHTML = won
-      ? "Six chambers held. Nothing got past you."
-      : "You held <b>" + (R.chamber - 1) + "</b> of " + CHAMBERS + " chambers.";
+      ? "All six chambers held, and <b>The Reeve</b> went down with the rest."
+      : "You held <b>" + (R.chamber - 1) + "</b> of " + CHAMBERS + " chambers"
+        + (R.chamber === CHAMBERS ? ", and met <b>The Reeve</b>." : ".");
     p.append(n);
+
+    const got = FEATS.filter(f => R.feats[f.id]);
+    if (got.length) {
+      p.append(el("h3", "feat-head", "What you did"));
+      const list = el("div", "feats");
+      for (const f of got) {
+        const t = el("div", "feat");
+        t.append(el("b", null, f.name));
+        t.append(el("span", null, f.note));
+        list.append(t);
+      }
+      p.append(list);
+    }
+
+    const tally = el("p", "m-note");
+    tally.innerHTML = "<b>" + R.kills + "</b> heroes stopped · <b>"
+      + Object.keys(R.built).length + "</b> of " + V.BODY_COUNT + " bodies built · <b>"
+      + R.dead + "</b> goblins lost";
+    p.append(tally);
+
     const below = el("p", "m-note");
     below.innerHTML = "Below this: <b>The Rot</b>, where the ground is dead and you earn "
       + "off corpses instead, and <b>The Deep</b>, where the seams are rich and thin and "
       + "nothing catches what gets past you.";
     p.append(below);
+
     const row = el("div", "m-row");
     const again = el("button", "btn on", "Again");
     again.onclick = () => { begin(); enterChamber(); };
