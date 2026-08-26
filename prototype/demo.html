@@ -184,6 +184,10 @@
      actually deciding about - the reward is why you are willing to. */
   .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
            margin: 12px 0 4px; }
+  .insp-pairs { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; width: 100%; }
+  .pair { font-size: 12.5px; color: var(--ink-dim); line-height: 1.35; }
+  .pair b { color: var(--goblin); font-family: var(--display); font-size: 14px;
+            letter-spacing: .03em; margin-right: 5px; }
   .feat-head { font-family: var(--display); font-size: 13px; letter-spacing: .16em;
                text-transform: uppercase; color: var(--ink-dim); font-weight: normal;
                margin: 16px 0 0; }
@@ -294,6 +298,7 @@
     <span class="insp-body" id="insp-body" hidden>
       <b id="insp-name">&mdash;</b>
       <span class="insp-meta" id="insp-meta"></span>
+      <span class="insp-pairs" id="insp-pairs" hidden></span>
       <button class="btn danger" id="insp-dig" type="button">Dig up</button>
     </span>
   </div>
@@ -445,6 +450,19 @@
 
   const START_COINS = 400;
 
+  // ---- Appendix A: persistent board + collapsing ground ---------------------
+  // The board never resets; the ground does. Persistence alone was what broke this
+  // before - board and purse both grew with no ceiling, so waves could not be tuned
+  // against an arrival state nobody could predict. Taking cells away restores the
+  // ceiling: maximum board power at chamber N is usableCells(N) x 3 parts, a number
+  // that was written down rather than one that emerged.
+  const PERSIST = {
+    collapsed:  [0, 2, 5, 8, 12, 16],   // cumulative cells gone by the START of chamber N
+    rightBias:  1.0,                    // weight (col+1)^bias: the ground goes right-to-left
+    minPerLane: 2,                      // never seal a lane
+    safeCols:   [0],                    // the last ground before the cart never goes
+  };
+
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = a => a[(Math.random() * a.length) | 0];
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -595,6 +613,30 @@
     return true;
   }
 
+  // Four parts make six possible pairings, and every one of them does something. A body
+  // gets every interaction for every pair of kinds inside it, so all 30 mixed bodies have
+  // a reason to exist rather than just a name - and a three-part body of three kinds gets
+  // all three of its pairs at once.
+  const PAIRS = [
+    { a: "chucker",   b: "digger",    id: "tipped",
+      name: "Coin-tipped", note: "Kills in its lane pay half again." },
+    { a: "chucker",   b: "barricade", id: "loophole",
+      name: "Loopholed",   note: "Takes a third less damage while it has a shot ready." },
+    { a: "chucker",   b: "sapper",    id: "staggered",
+      name: "Staggering",  note: "Its shove interrupts, resetting what it hits." },
+    { a: "digger",    b: "barricade", id: "strongbox",
+      name: "Strongbox",   note: "Banks its take. Spills half of it when it dies." },
+    { a: "digger",    b: "sapper",    id: "shored",
+      name: "Shored",      note: "Cannot be buried, and digs a quarter faster." },
+    { a: "barricade", b: "sapper",    id: "propped",
+      name: "Propped",     note: "Repairs itself when nothing is chewing on it." },
+  ];
+  const pairsIn = g => PAIRS.filter(pr => countOf(g, pr.a) > 0 && countOf(g, pr.b) > 0);
+  const hasPair = (g, id) => {
+    const pr = PAIRS.find(x => x.id === id);
+    return !!pr && countOf(g, pr.a) > 0 && countOf(g, pr.b) > 0;
+  };
+
   function nameOf(g) {
     return BODY[partsKey(g)] || UNITS[g.parts[0]].name;
   }
@@ -602,8 +644,13 @@
   // A Digger's take is a function of how far forward you put it. No tiles, no lottery:
   // the gradient is continuous and the choice is entirely yours.
   const DIG_EVERY = 5;
-  const yieldAt = col => Math.round(3 + col * 1.5);
-  const RICH_MAX = yieldAt(COLS - 1);
+  // A closing tunnel pushes you onto the deep seam, so what is left pays better. Without
+  // this the collapse compounds against itself: fewer cells means fewer Diggers means
+  // less gold means fewer bodies, and the run dies of poverty rather than of heroes.
+  // Measured at a flat yield the bot sat broke 50-67% of every chamber.
+  const richness = () => 1 + (Object.keys(S.collapsed || {}).length / 35) * 1.9;
+  const yieldAt = col => Math.round((3 + col * 1.5) * richness());
+  const RICH_MAX = () => yieldAt(COLS - 1);
   // A Digger sinks its shaft deeper the longer it is left alone, so abandoning one
   // costs you the work. Placing a fresh miner elsewhere is no longer free.
   const DIG_WARM = 18;                     // seconds to reach full output
@@ -626,6 +673,9 @@
   const laneIsOpen = r => !CFG.shut.includes(r)
                        && LANE_ORDER.indexOf(r) < lanesOpen(Math.max(S.waveIx, 0));
   const isFlooded = c => CFG.flood.includes(c);
+  // One predicate for "nothing can stand here": the Scree's timed rubble, water, and
+  // ground that has already fallen in.
+  const blocked = (c, r) => !!S.buried[c + "," + r] || !!S.collapsed[c + "," + r] || isFlooded(c);
 
   // Purses are the whole early economy — there is no sun falling from the sky here, so
   // a cleared wave has to pay for the answer to the next one. Wave 1 nets ~60, which is
@@ -691,8 +741,8 @@
       gain: { id: "ricochet", role: "chucker", answers: ["lanes"] } },
 
     { id: "workings", name: "The old workings", where: "flooded floor",
-      cost: { kind: "ground", text: "The far two columns are waterlogged. Nothing can be placed there.",
-              apply: r => { r.flood = [5, 6]; } },
+      cost: { kind: "ground", text: "The middle of the floor floods. Two columns you cannot build on, right where the line wants to be.",
+              apply: r => { r.flood = [3, 4]; } },
       gain: { id: "prospect", role: "digger", answers: ["ground"] } },
 
     { id: "drift", name: "The picked-over drift", where: "worked out",
@@ -737,11 +787,12 @@
   function newRun() {
     S = {
       coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 5.0, waveStack: 0,
+      callLane: -1, callT: 0,
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
       traps: new Array(ROWS).fill(CFG.world !== "deep"),
       cart: CFG.world === "deep" ? 3 : 0,
       cool: Object.fromEntries(Object.keys(UNITS).map(k => [k, 0])),
-      buried: {}, buryT: 14, veins: {},
+      buried: {}, buryT: 14, veins: {}, collapsed: {}, cracking: {},
       laneLoad: new Array(ROWS).fill(0), laneQuiet: new Array(ROWS).fill(0), spawnCount: 0,
       waveLanes: [],
       // 0 = still caved in, 1 = open ground. Closed lanes are rubble you cannot build on.
@@ -754,7 +805,7 @@
       selUnit: null, selGob: null, walkers: [],
       // What the run has built, what it has lost, and which lanes did the work. The
       // ending is made of these.
-      seen: {}, goblinDeaths: 0, killLanes: {}, chuckerLanes: {},
+      seen: {}, goblinDeaths: 0, killLanes: {}, chuckerLanes: {}, marches: 0,
       shake: 0, freeze: 0, flash: 0, banner: 0, bannerText: "",
       over: false, won: false, paused: false, t: 0, killed: 0, mined: 0, rate: 0,
     };
@@ -842,7 +893,10 @@
     const c = Math.min(CFG.chamber, CHAMBERS);
     const n = CHAMBER_WAVE_COUNT[c - 1] || 3;
     const out = WAVES.slice(0, Math.min(WAVES.length, n));
-    if (c >= 5) out.push(COLUMN);       // introduced in 5, then it is the boss's whole idea
+    // The column is chamber 5's lesson and the Reeve is chamber 6's exam. Running both
+    // in the last chamber meant a column, then another column, then the boss, with no
+    // room to rebuild in between - which is what it felt like.
+    if (c === CHAMBERS - 1) out.push(COLUMN);
     if (c === CHAMBERS) out.push(BOSS);
     return out;
   }
@@ -867,6 +921,7 @@
     const list = w.list.concat(Array.from({ length: extra }, () => pick(w.list)));
     S.queue = list.map(type => {
       t += rnd(gap * 0.65, gap * 1.5);
+      if (w.stack && t < 3.2) t = 3.2 + t * 0.4;      // the warning has to land first
       // deeper chapters send leapers in place of scouts — a different problem, not a
       // bigger one, which is the whole point of going down
       let swap = type;
@@ -877,6 +932,15 @@
     });
     S.waveLanes = [];
     S.waveStack = w.stack || 0;
+    if (w.stack) {
+      // Name it, mark the lane, and give the player the breath to answer it. A column
+      // that turns up unannounced is indistinguishable from a bug.
+      S.callLane = emptiestLane();
+      S.callT = 3.2;
+      popText(W - 120, laneY(S.callLane) + CELL * 0.4, "THEY MASS HERE", "#d1553f");
+      ring(W - 90, laneY(S.callLane) + CELL * 0.5, 190, "rgba(209,85,63,.8)", 5, 0.8);
+      kick(7); stop(0.06);
+    } else { S.callLane = -1; S.callT = 0; }
     for (let r = 0; r < ROWS; r++) { S.laneLoad[r] *= 0.7; if (S.laneQuiet[r] > 0) S.laneQuiet[r]--; }
     S.phase = "fight"; S.phaseT = 0;
     S.bannerText = "WAVE " + (S.waveIx + 1) + " — " + w.name.toUpperCase();
@@ -921,7 +985,8 @@
     const paid = Object.keys(S.killLanes)
                        .filter(r => !S.chuckerLanes[r]).map(Number);
     return { seen: Object.assign({}, S.seen), deaths: S.goblinDeaths,
-             kills: S.killed, paidForItself: paid.length > 0 };
+             kills: S.killed, paidForItself: paid.length > 0,
+             traps: S.traps.slice(), marches: S.marches || 0 };
   }
 
   function victory() {
@@ -994,7 +1059,7 @@
         S.buryT = 12 * CFG.rubbleEvery;
         const free = [];
         for (let c = 1; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
-          if (!laneIsOpen(r) || S.buried[c + "," + r]) continue;
+          if (!laneIsOpen(r) || blocked(c, r)) continue;
           // occupied cells are fair game — burying a working goblin is the threat
           free.push([c, r]);
         }
@@ -1042,7 +1107,7 @@
       const p = cellOf(g);
       // under a rockfall: still there, still soaks hits, but not working
       const ownKey = g.col + "," + g.row;
-      if (S.buried[ownKey] && !gobHas(g, "packed")) {
+      if (S.buried[ownKey] && !gobHas(g, "packed") && !hasPair(g, "shored")) {
         g.entombed = 1;
         // Everything under a rockfall stops working - except the goblin whose whole job is
         // rubble. It digs itself out, and only itself, at half the speed it clears a
@@ -1063,6 +1128,13 @@
       }
       g.dug = 0;
       g.entombed = 0;
+      // Propped: props and shoring hold a wall up between attacks
+      if (hasPair(g, "propped") && S.t - (g.lastHit || -99) > 2.5 && g.hp < maxHpOf(g)) {
+        g.hp = Math.min(maxHpOf(g), g.hp + 9 * dt);
+        if (Math.random() < dt * 1.4)
+          burst(p.x + CELL * 0.5, p.y + CELL * 0.4, 1,
+                { colors: ["#6fbf5b"], spread: 40, size: [1.2, 2.2], life: [0.3, 0.6] });
+      }
       g.cd -= dt;
       if (g.squash > 0) g.squash -= dt * 3.4;
       if (g.hurtT > 0) g.hurtT -= dt;
@@ -1102,12 +1174,14 @@
           if (countOf(g, "hollerer") > 0) spec = { ...spec, slow: 1.1 };
           if (countOf(g, "sapper") > 0)
             spec = { ...spec, shove: Math.min(10, 4 * countOf(g, "sapper")) };
-          if (countOf(g, "tollkeep") > 0) spec = { ...spec, bounty: 7 * countOf(g, "tollkeep") };
+          if (hasPair(g, "tipped"))    spec = { ...spec, tipped: true };
+          if (hasPair(g, "staggered")) spec = { ...spec, stagger: true };
           g.cd = spec.cd;
           S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
                          dmg: spec.dmg, pierce: spec.pierce, kind: spec.kind, trail: [], spin: 0,
                          aoe: spec.aoe, aoeDmg: spec.aoeDmg, slow: spec.slow,
-                         shove: spec.shove, bounty: spec.bounty });
+                         shove: spec.shove, bounty: spec.bounty,
+                         tipped: spec.tipped, stagger: spec.stagger });
           if (cn === 3) kick(3);
           Sound.play(spec.snd);
           burst(p.x + CELL * 0.64, p.y + CELL * 0.46, 3,
@@ -1163,8 +1237,9 @@
         const left = S.veins[vk];
         // Prospector cashes in on fresh ground, which pushes you to keep moving
         const rich = gobHas(g, "prospect") && left > 0.92 ? 3 : 1;
+        const shored = hasPair(g, "shored") ? 1.25 : 1;   // a propped shaft works faster
         const take = Math.max(0, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85)
-                                            * seam * left * rich));
+                                            * seam * left * rich * shored));
         rate += take / DIG_EVERY;
         if (g.dcd === undefined) g.dcd = 1.2;
         g.dcd -= dt;
@@ -1180,10 +1255,12 @@
             continue;
           }
           S.mined += take;
+          // Strongbox: a wall around a mine is somewhere to put the takings
+          if (hasPair(g, "strongbox")) g.banked = (g.banked || 0) + Math.round(take * 0.5);
           g.squash = 1;
           spill(p.x + CELL / 2, p.y + CELL * 0.55, take);
           // a richer pull throws more rock, so the gradient is visible in the payout
-          const heft = take / RICH_MAX;
+          const heft = take / RICH_MAX();
           burst(p.x + CELL / 2, p.y + CELL * 0.72, Math.round(4 + heft * 9),
                 { colors: ["#6b5a52", "#8a7768", "#c9a24a"], spread: 110 + heft * 130,
                   size: [1.3, 2.4 + heft * 2.4], gravity: 460, life: [0.22, 0.5] });
@@ -1194,7 +1271,14 @@
       }
     }
     S.rate = rate;
-    for (const g of S.goblins) if (g.hp <= 0 && !g.mourned) { g.mourned = true; S.goblinDeaths++; }
+    for (const g of S.goblins) if (g.hp <= 0 && !g.mourned) {
+      g.mourned = true; S.goblinDeaths++;
+      if (g.banked > 0) {                       // Strongbox: the takings survive it
+        const gp = cellOf(g);
+        spill(gp.x + CELL / 2, gp.y + CELL * 0.5, g.banked);
+        popText(gp.x + CELL / 2, gp.y - 2, "+" + g.banked + " SPILLED", "#e8c05a");
+      }
+    }
     S.goblins = S.goblins.filter(g => g.hp > 0);
     if (S.selGob && S.selGob.hp <= 0) S.selGob = null;
 
@@ -1211,6 +1295,14 @@
         f.x += 3 + (s.shove || 0);
         if (s.slow) f.slowT = Math.max(f.slowT || 0, s.slow);
         if (s.bounty) f.bounty = (f.bounty || 0) + s.bounty;
+        if (s.tipped) f.tipped = true;
+        // Staggering: the shove does not just move it, it interrupts. Whatever it was
+        // chewing on gets a breath, which is what makes a Trencher worth building.
+        if (s.stagger) {
+          f.stunT = Math.max(f.stunT || 0, 0.55);
+          burst(f.x, laneY(f.lane) + CELL * 0.4, 3,
+                { colors: ["#e8c05a", "#fff3cf"], spread: 130, size: [1.2, 2.6], life: [0.1, 0.3] });
+        }
         if (s.aoe) {
           // a little bomb: everything close by in the lane catches some of it
           for (const o of S.foes) {
@@ -1323,8 +1415,11 @@
         continue;
       }
 
+      if (f.stunT > 0) { f.stunT -= dt; continue; }
       if (wall) {
-        wall.hp -= d.dps * dt; wall.hurtT = 0.13; wall.lastHit = S.t;
+        // Loopholed: a shooter behind a wall is hard to get at while it is looking at you
+        const soak = hasPair(wall, "loophole") && wall.cd < 0.9 ? 0.66 : 1;
+        wall.hp -= d.dps * soak * dt; wall.hurtT = 0.13; wall.lastHit = S.t;
         // Spiked bites back, which turns a wall into a slow weapon
         if (gobHas(wall, "spiked")) {
           f.hp -= d.dps * 0.85 * dt;
@@ -1413,6 +1508,8 @@
       // being a flat lane-wide multiplier that runs all level and never cares where it is.
       const scav = S.goblins.filter(g => g.row === f.lane)
                             .reduce((a, g) => a + gobSmall(g, "scav"), 0);
+      // Coin-tipped: the shot that landed it was fitted by a Digger
+      if (f.tipped) purse = Math.round(purse * 1.5);
       let toll = 0;
       for (const g of S.goblins) {
         if (g.row !== f.lane) continue;
@@ -1426,7 +1523,7 @@
           popText(gp.x + CELL / 2, gp.y + 6, "NOTHING LEFT", "#8a8095");
           continue;
         }
-        toll += n * (yieldAt(g.col) / RICH_MAX) * left;
+        toll += n * (yieldAt(g.col) / RICH_MAX()) * left;
         S.veins[vk] = Math.max(0, left - (1 / VEIN_PULLS) * n * world().bore * 0.55);
         // and it has to be visible, or nobody believes it is working
         popText(gp.x + CELL / 2, gp.y + 6, "TOLL", "#e8c05a");
@@ -1913,6 +2010,51 @@
       cx.restore();
     }
 
+    // Ground that has already gone. It must not look like the Scree's rubble, because
+    // rubble clears and this never does: a hole with nothing in it, not a heap.
+    for (const k in S.collapsed) {
+      const [cc, rr] = k.split(",").map(Number);
+      const x = OX + cc * CELL, y = OY + rr * CELL;
+      cx.save();
+      cx.beginPath(); cx.rect(x, y, CELL, CELL); cx.clip();
+      cx.fillStyle = "#08070b"; cx.fillRect(x, y, CELL, CELL);
+      cx.strokeStyle = "rgba(70,62,80,.75)"; cx.lineWidth = 2;
+      cx.beginPath();
+      cx.moveTo(x + 4, y + 12); cx.lineTo(x + 26, y + 30); cx.lineTo(x + 18, y + 54);
+      cx.lineTo(x + 44, y + 78); cx.lineTo(x + 74, y + 62); cx.lineTo(x + CELL - 4, y + 84);
+      cx.stroke();
+      cx.fillStyle = "rgba(120,110,132,.5)";
+      for (let i = 0; i < 5; i++) {
+        const a = (i * 2.399 + cc) % 1, b2 = (i * 4.771 + rr) % 1;
+        cx.fillRect(x + 8 + a * (CELL - 20), y + 8 + b2 * (CELL - 20), 3, 2);
+      }
+      cx.restore();
+    }
+
+    // Ground that goes at the end of THIS chamber. Shown the whole time, because a
+    // collapse you were warned about is a decision and one you were not is a tax.
+    for (const k in S.cracking) {
+      const [cc, rr] = k.split(",").map(Number);
+      if (S.collapsed[k]) continue;
+      const x = OX + cc * CELL, y = OY + rr * CELL;
+      const pulse = 0.5 + Math.sin(S.t * 2.1 + cc * 0.8 + rr) * 0.5;
+      cx.save();
+      cx.beginPath(); cx.rect(x, y, CELL, CELL); cx.clip();
+      cx.fillStyle = "rgba(90,40,30," + (0.1 + pulse * 0.12) + ")";
+      cx.fillRect(x, y, CELL, CELL);
+      cx.strokeStyle = "rgba(209,85,63," + (0.45 + pulse * 0.35) + ")";
+      cx.lineWidth = 2; cx.setLineDash([7, 5]); cx.lineDashOffset = -S.t * 14;
+      cx.strokeRect(x + 3, y + 3, CELL - 6, CELL - 6);
+      cx.setLineDash([]);
+      cx.strokeStyle = "rgba(209,85,63," + (0.3 + pulse * 0.3) + ")";
+      cx.lineWidth = 1.6;
+      cx.beginPath();
+      cx.moveTo(x + 10, y + 20); cx.lineTo(x + 34, y + 42);
+      cx.lineTo(x + 26, y + 66); cx.lineTo(x + 58, y + 80);
+      cx.stroke();
+      cx.restore();
+    }
+
     // Rubble from a rockfall. Same visual language as a caved-in lane, one cell wide.
     for (const k in S.buried) {
       const [bc, br] = k.split(",").map(Number);
@@ -1981,8 +2123,7 @@
       // An occupied cell is a legal target - that is where fusions come from - so it only
       // reads red when the body standing there has no room. A goblin lifted off the board
       // has nowhere to go but into another goblin, so bare ground is red for it.
-      const ok = laneIsOpen(hover.row) && !S.buried[hover.col + "," + hover.row]
-                 && !isFlooded(hover.col)
+      const ok = laneIsOpen(hover.row) && !blocked(hover.col, hover.row)
                  && (on ? on !== S.selGob && on.parts.length + carry.length <= MAX_PARTS
                         : !S.selGob)
                  && (S.selGob || (S.coins >= costOf(S.selUnit) && S.cool[S.selUnit] <= 0));
@@ -2005,7 +2146,7 @@
       }
       if (S.selUnit === "digger") {
         // worth shown as coins, not digits
-        const pips = Math.max(1, Math.round(yieldAt(hover.col) / RICH_MAX * 5));
+        const pips = Math.max(1, Math.round(yieldAt(hover.col) / RICH_MAX() * 5));
         const bx = OX + hover.col * CELL + CELL / 2, by = OY + hover.row * CELL + CELL - 12;
         for (let i = 0; i < pips; i++) {
           const px = bx - (pips - 1) * 5 + i * 10;
@@ -2158,7 +2299,7 @@
       cx.font = "17px " + FONT; cx.fillStyle = "#e6dfd4";
       cx.fillText(S.won
         ? S.killed + " left in the dirt, " + Math.round(S.mined) + " gold cut out of the rock."
-        : "Wave " + (S.waveIx + 1) + " of " + WAVES.length + ".", W / 2, H / 2 + 18);
+        : "Wave " + (S.waveIx + 1) + " of " + CHAMBER_WAVES.length + ".", W / 2, H / 2 + 18);
       cx.fillStyle = "#9a9089"; cx.font = "13px " + FONT;
       cx.fillText("Click anywhere for a fresh chamber.", W / 2, H / 2 + 46);
     }
@@ -2194,6 +2335,11 @@
       popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12, "STILL CAVED IN", "#8a8095");
       burst(OX + col * CELL + CELL / 2, OY + row * CELL + CELL / 2, 8,
             { colors: ["#4a4150", "#3b3340"], spread: 150, size: [1.4, 3], life: [0.2, 0.4] });
+      return false;
+    }
+    if (S.collapsed[col + "," + row]) {
+      Sound.play("deny");
+      popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12, "THE FLOOR IS GONE", "#8a8095");
       return false;
     }
     if (S.buried[col + "," + row]) {
@@ -2267,9 +2413,10 @@
               "NO ROOM IN THERE", "#d1553f");
       return false;
     }
-    if (!laneIsOpen(dst.row) || S.buried[dst.col + "," + dst.row]) { Sound.play("deny"); return false; }
+    if (!laneIsOpen(dst.row) || blocked(dst.col, dst.row)) { Sound.play("deny"); return false; }
     const from = cellOf(src);
     S.goblins = S.goblins.filter(g => g !== src);
+    S.marches++;
     S.walkers.push({ parts: src.parts.slice(), hp: src.hp, maxHp: maxHpOf(src),
                      age: src.age || 0, spent: spentOn(src),
                      x: from.x + CELL / 2, y: from.y + CELL * 0.55,
@@ -2329,7 +2476,7 @@
     const col = clamp(Math.round((w.x - OX - CELL / 2) / CELL), 0, COLS - 1);
     let best = null;
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      if (!laneIsOpen(r) || S.buried[c + "," + r] || gobAt(c, r)) continue;
+      if (!laneIsOpen(r) || blocked(c, r) || gobAt(c, r)) continue;
       const d = Math.abs(c - col) + Math.abs(r - lane) * 1.5;
       if (!best || d < best.d) best = { c, r, d };
     }
@@ -2370,10 +2517,11 @@
   }
 
   // Dig one up. Free for a moment in case of a misclick, then half back.
+  // Digging one up buys back the tile and nothing else. It used to refund half its cost,
+  // which made a full board a reversible decision and took the weight out of placing.
   const GRACE = 3;
   function refundOf(g) {
-    const spent = spentOn(g);
-    return (S.t - g.born <= GRACE) ? spent : Math.round(spent * 0.5);
+    return (S.t - g.born <= GRACE) ? spentOn(g) : 0;   // a moment's grace for a misclick
   }
   function removeGoblin(g) {
     const back = refundOf(g), gp = cellOf(g);
@@ -2489,6 +2637,7 @@
   const inspBody = document.getElementById("insp-body");
   const inspName = document.getElementById("insp-name");
   const inspMeta = document.getElementById("insp-meta");
+  const inspPairs = document.getElementById("insp-pairs");
   function renderInspector() {
     const g = S.selGob;
     if (!g || g.hp <= 0) { inspEmpty.hidden = false; inspBody.hidden = true; return; }
@@ -2502,10 +2651,22 @@
       bits.push("shaft " + Math.round(warm * 100) + "%");
       bits.push("+" + Math.max(1, Math.round(yieldAt(g.col) * warm * (1 + (dn - 1) * 0.85))) + " per pull");
     }
+    if (hasPair(g, "strongbox") && g.banked) bits.push(g.banked + " banked");
     if (g.parts.length < MAX_PARTS) bits.push("room for " + (MAX_PARTS - g.parts.length) + " more");
     const free = S.t - g.born <= GRACE;
     bits.push(free ? "dig up: full refund" : "dig up: half back");
     inspMeta.textContent = bits.join("  ·  ");
+    // What this particular mixture does, named. Without this the only visible difference
+    // between two fused bodies is the word on the cell.
+    const prs = pairsIn(g);
+    inspPairs.replaceChildren();
+    inspPairs.hidden = !prs.length;
+    for (const pr of prs) {
+      const t = document.createElement("span");
+      t.className = "pair";
+      t.innerHTML = "<b>" + pr.name + "</b> " + pr.note;
+      inspPairs.appendChild(t);
+    }
   }
   document.getElementById("insp-dig").addEventListener("click", () => {
     if (S.selGob) removeGoblin(S.selGob);
@@ -2515,7 +2676,7 @@
   const pipsEl = document.getElementById("pips");
   function renderPips() {
     pipsEl.innerHTML = "";
-    for (let i = 0; i < WAVES.length; i++) {
+    for (let i = 0; i < CHAMBER_WAVES.length; i++) {
       const d = document.createElement("div");
       d.className = "pip" + (i < S.waveIx ? " done" : i === S.waveIx ? " now" : "");
       pipsEl.appendChild(d);
@@ -2579,7 +2740,7 @@
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
     nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
     BODY, BODY_KEYS: Object.keys(BODY), BODY_COUNT: Object.keys(BODY).length,
-    ROUTE_CARDS,
+    ROUTE_CARDS, PERSIST,
     reportNow: () => report(),
     FOES,
     audioWake: () => Sound.wake(), audioPlay: k => Sound.play(k),
@@ -2618,22 +2779,27 @@
       // chapter-3 opening buys too. The old +50% a chapter outran the +25% price rise, so
       // the deepest chapter started a third richer than the first while everything else
       // about it was meant to be harder.
-      // A wiped board has to be rebought, so the opening rises to fund it - held flat at
-      // 400 the run simply goes broke by chamber 3 and fusion stops happening entirely,
-      // because fusing is a second purchase on a tile you have already paid for and that
-      // needs surplus. What still tightens is the ground: by chamber 6 two thirds of the
-      // pockets are dead, so the gold buys less standing room than the number suggests.
-      else S.coins = START_COINS + (Math.min(CFG.chamber, CHAMBERS) - 1) * 160;
+      // One opening, once. Everything after chamber 1 is gold you earned and kept - the
+      // ramp that used to sit here existed to fund rebuying a wiped board, and there is
+      // no wipe any more. It also handed you 1200 by chamber 6, which is enough to skip
+      // digging altogether.
+      else S.coins = START_COINS;
       if (cfg.veins) S.veins = Object.assign({}, cfg.veins);
       if (cfg.seen) S.seen = Object.assign({}, cfg.seen);
+      if (cfg.collapsed) S.collapsed = Object.assign({}, cfg.collapsed);
+      if (cfg.cracking) S.cracking = Object.assign({}, cfg.cracking);
+      // Bear traps are a one-off, not a per-chamber allowance. Spending one in chamber 2
+      // means that lane has no net under it for the rest of the run.
+      if (cfg.traps) S.traps = cfg.traps.slice();
       CHAMBER_WAVES = wavesForChamber();
-      S.bannerText = "CHAMBER " + CFG.chamber + " OF 3";
+      renderPips();          // the pips count THIS chamber's waves, not the whole table
+      S.bannerText = "CHAMBER " + CFG.chamber + " OF " + CHAMBERS;
       S.banner = 2.4;
       const w = WORLDS[CFG.world];
       if (w) {
         document.querySelector("h1").textContent = w.name;
         document.querySelector(".kicker").textContent =
-          "chapter " + CFG.chapter + " · chamber " + CFG.chamber + " of 3 · " + w.rule;
+          "chamber " + CFG.chamber + " of " + CHAMBERS + " · " + w.name + " · " + w.rule;
       }
       renderAll();
     },
@@ -2693,10 +2859,45 @@
   }
 
   const ROUTE_AT = [2, 4];      // a fork after chamber 2 and after chamber 4
+
+  // Which cells give way next. Heroes arrive from the right and the seams are richest
+  // there, so collapsing right-to-left takes income and forward position in one stroke
+  // and reads as a tunnel closing in. Two rules are inviolable: a lane is never sealed,
+  // and the last column before the cart never goes - randomness may add pressure, but
+  // it may never own a place to stand.
+  function pickCracking(collapsed, forChamber) {
+    const P = V.PERSIST;
+    const want = (P.collapsed[Math.min(forChamber, P.collapsed.length) - 1] || 0)
+               - Object.keys(collapsed).length;
+    const out = {};
+    if (want <= 0) return out;
+    const laneLeft = [];
+    for (let r = 0; r < 5; r++) {
+      let n = 0;
+      for (let c = 0; c < 7; c++) if (!collapsed[c + "," + r]) n++;
+      laneLeft.push(n);
+    }
+    const pool = [];
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 7; c++) {
+      if (collapsed[c + "," + r] || P.safeCols.includes(c)) continue;
+      pool.push({ c, r, w: Math.pow(c + 1, P.rightBias) * (0.6 + Math.random()) });
+    }
+    pool.sort((a, b) => b.w - a.w);
+    for (const cell of pool) {
+      if (Object.keys(out).length >= want) break;
+      if (laneLeft[cell.r] - 1 < P.minPerLane) continue;
+      out[cell.c + "," + cell.r] = true;
+      laneLeft[cell.r]--;
+    }
+    return out;
+  }
   function begin() {
     R = { chamber: 1, board: null, veins: null, gold: undefined,
           smalls: {}, upgrades: {}, built: {}, dead: 0, kills: 0,
-          feats: {}, cleanChambers: 0,
+          feats: {}, cleanChambers: 0, marches: 0,
+          // Appendix A: the board and the purse survive the whole run, and the ground is
+          // what gets taken away instead.
+          collapsed: {}, cracking: {}, traps: null,
           shut: [], flood: [], rubbleEvery: 1, speedMul: 1, drain: 1, taken: [] };
   }
 
@@ -2711,9 +2912,12 @@
   function enterChamber() {
     metaEl.hidden = true; gameEl.hidden = false;
     window.scrollTo(0, 0);
+    if (!Object.keys(R.cracking).length && R.chamber < CHAMBERS)
+      R.cracking = pickCracking(R.collapsed, R.chamber + 1);
     V.begin({ world: worldOf(R.chamber), chapter: 1, chamber: R.chamber,
               roles: rosterFor(R.chamber), upgrades: R.upgrades, smalls: R.smalls,
               board: R.board, carryGold: R.gold, veins: R.veins, seen: R.built,
+              collapsed: R.collapsed, cracking: R.cracking, traps: R.traps,
               shut: R.shut, flood: R.flood,
               rubbleEvery: R.rubbleEvery, speedMul: R.speedMul }, chamberDone);
   }
@@ -2733,9 +2937,43 @@
     if (Object.keys(R.built).length >= 5) R.feats.read = true;
     if (!won) return ending(false);
     R.veins = veins;                       // drained ground stays drained
+    R.traps = rep && rep.traps ? rep.traps : R.traps;
+    R.marches += (rep && rep.marches) || 0;
+
+    // The cracks you were warned about last chamber give way now. Anything still standing
+    // on one goes down with it - the whole chamber was the notice.
+    R.lostToCollapse = 0;
+    for (const k in R.cracking) R.collapsed[k] = true;
+    R.board = (board || []).filter(b => {
+      const gone = R.collapsed[b.col + "," + b.row];
+      if (gone) R.lostToCollapse += b.parts.length;
+      return !gone;
+    });
+    R.dead += R.lostToCollapse;
+    R.gold = goldLeft;                     // one tax in this model, and it is the ground
+    R.cracking = pickCracking(R.collapsed, R.chamber + 2);
+    probe(goldLeft);
+
     if (R.chamber >= CHAMBERS) return ending(true);
     if (ROUTE_AT.includes(R.chamber)) return fork();
     held();
+  }
+
+  // Five numbers, because the test is worthless if it comes down to whether the run
+  // felt about right.
+  function probe(goldLeft) {
+    const usable = 35 - Object.keys(R.collapsed).length;
+    const bodies = R.board || [];
+    const parts = bodies.reduce((n, b) => n + b.parts.length, 0);
+    window.__probe = window.__probe || [];
+    window.__probe.push({
+      chamber: R.chamber, goldLeft,
+      usable, occupied: bodies.length,
+      fill: +(bodies.length / Math.max(1, usable)).toFixed(2),
+      avgParts: +(parts / Math.max(1, bodies.length)).toFixed(2),
+      distinct: Object.keys(R.built).length,
+      marches: R.marches, lostToCollapse: R.lostToCollapse,
+    });
   }
 
   // Recognition, not unlocks. They cost nothing to build - no unlock content, no save
@@ -2762,10 +3000,8 @@
     const row = el("div", "m-row");
     const go = el("button", "btn on", "Into chamber " + next);
     go.onclick = () => {
+      // The board stands. What changed is that some of the floor it stands on is gone.
       R.chamber++;
-      // The board comes down between chambers and the ground does not. Placement is the
-      // game, and six chambers should mean six chances to play it.
-      R.board = null; R.gold = undefined;
       enterChamber();
     };
     row.append(go);
@@ -2802,7 +3038,6 @@
           R.drain = 1;
         }
         R.chamber++;
-        R.board = null; R.gold = undefined;
         enterChamber();
       };
       cards.append(b);
@@ -2872,7 +3107,7 @@
     show([p, ledgerStrip(), row]);
   }
 
-  window.__meta = { get run() { return R; }, title, begin, enterChamber,
+  window.__meta = { get run() { return R; }, title, begin, enterChamber, pickCracking,
                     set chamber(c) { R.chamber = c; } };
   title();
 })();
