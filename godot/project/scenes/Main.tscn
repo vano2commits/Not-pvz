@@ -1,0 +1,162 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/board_view.gd" id="2"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1")
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.0627451, 0.054902, 0.0745098, 1)
+
+[node name="Column" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 10.0
+offset_right = -12.0
+offset_bottom = -10.0
+theme_override_constants/separation = 8
+
+[node name="Hud" type="HBoxContainer" parent="Column"]
+layout_mode = 2
+theme_override_constants/separation = 26
+
+[node name="GoldBox" type="VBoxContainer" parent="Column/Hud"]
+layout_mode = 2
+
+[node name="GoldCap" type="Label" parent="Column/Hud/GoldBox"]
+layout_mode = 2
+text = "GOLD"
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.54, 0.51, 0.58, 1)
+
+[node name="Gold" type="Label" parent="Column/Hud/GoldBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "400"
+theme_override_font_sizes/font_size = 26
+theme_override_colors/font_color = Color(0.91, 0.75, 0.35, 1)
+
+[node name="WaveBox" type="VBoxContainer" parent="Column/Hud"]
+layout_mode = 2
+
+[node name="WaveCap" type="Label" parent="Column/Hud/WaveBox"]
+layout_mode = 2
+text = "WAVE"
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.54, 0.51, 0.58, 1)
+
+[node name="Wave" type="Label" parent="Column/Hud/WaveBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "—"
+theme_override_font_sizes/font_size = 26
+
+[node name="GroundBox" type="VBoxContainer" parent="Column/Hud"]
+layout_mode = 2
+
+[node name="GroundCap" type="Label" parent="Column/Hud/GroundBox"]
+layout_mode = 2
+text = "GROUND"
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.54, 0.51, 0.58, 1)
+
+[node name="Ground" type="Label" parent="Column/Hud/GroundBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "35 cells"
+theme_override_font_sizes/font_size = 16
+
+[node name="BoardWrap" type="CenterContainer" parent="Column"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Board" type="Control" parent="Column/BoardWrap"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(788, 542)
+layout_mode = 2
+script = ExtResource("2")
+
+[node name="Banner" type="Label" parent="Column/BoardWrap/Board"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -260.0
+offset_top = 6.0
+offset_right = 260.0
+offset_bottom = 44.0
+horizontal_alignment = 1
+text = ""
+theme_override_font_sizes/font_size = 30
+theme_override_colors/font_color = Color(0.91, 0.75, 0.35, 1)
+
+[node name="Rack" type="HBoxContainer" parent="Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Inspector" type="RichTextLabel" parent="Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+text = "[i]Tap a goblin to inspect it. Tap two to merge them — the first one walks.[/i]"
+
+[node name="Panel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -280.0
+offset_top = -170.0
+offset_right = 280.0
+offset_bottom = 170.0
+
+[node name="Pad" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 20
+
+[node name="Inner" type="VBoxContainer" parent="Panel/Pad"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PanelTitle" type="Label" parent="Panel/Pad/Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hoard"
+theme_override_font_sizes/font_size = 30
+theme_override_colors/font_color = Color(0.91, 0.75, 0.35, 1)
+
+[node name="PanelBody" type="RichTextLabel" parent="Panel/Pad/Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+text = ""
+
+[node name="PanelButton" type="Button" parent="Panel/Pad/Inner"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+text = "Down we go"

@@ -385,8 +385,15 @@ the file, call `__hoard.begin({world, chapter, chamber, roles, upgrades})`, step
 ## Repo layout
 
 ```
+godot/
+  project/          ← the Godot 4 port. Open project.godot here.
+  tools/gdcheck.mjs   static checker for the GDScript, since no Godot ran against it
+  SETUP.md          ← opening it, where the numbers live, and the MCP toolkit
+  PORT.md           the original port plan
+  tuning.md         every tuned number with its destination
 prototype/
-  hoard.html        ← the game. This is the one that matters.
+  demo.html         ← the demo build the port was made from
+  hoard.html        ← the full prototype
   muster.html       ← the finite-roster dead end, kept for reference
   veins.html        ← the chamber engine before the meta layer wrapped it
   descent.html      ← earlier: the run structure
@@ -396,9 +403,6 @@ prototype/
 design/
   world-one.html    ← world one design doc
   progression.html  ← meta progression proposal
-godot/
-  PORT.md           ← the port plan, and what does not port
-  tuning.md         ← every tuned number with its Godot destination
 ```
 
 The older prototypes are kept deliberately. Each one answered a question, and
@@ -408,7 +412,13 @@ the answers are easier to re-read as running builds than as prose.
 
 ## Where it goes next
 
-**Godot 4.** The trigger is not code size — `hoard.html` is one file and will
+**Godot 4 — the port now exists**, in `godot/project`. Open `project.godot`, and every
+number in the game is a field in `data/tuning.tres`. See `godot/SETUP.md`, which is
+honest about the fact that no Godot has run against the code: it was written in a
+container with no engine available, so expect first-open errors. `tools/gdcheck.mjs`
+catches what can be caught without one.
+
+The original reasoning, still true. The trigger is not code size — `hoard.html` is one file and will
 stay manageable. It is that the next two things on the list are *numbers you
 want to tweak without editing JavaScript* and *real art*, and those are exactly
 what an engine buys.

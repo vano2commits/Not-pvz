@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="FoeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/foe_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"pavise"
+display_name = "Pavise"
+hp = 300
+speed = 16.0
+dps = 26.0
+purse = 20
+points = 3
+leaps = false
+soak = 14.0
+boss = false

@@ -1,0 +1,42 @@
+[gd_resource type="Resource" script_class="Tuning" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/tuning.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+cols = 7
+rows = 5
+cell = 96
+origin = Vector2i(96, 52)
+lane_order = Array[int]([2, 1, 3, 0, 4])
+start_coins = 400
+yield_base = 3.0
+yield_per_col = 1.5
+dig_every = 5.0
+dig_warm = 18.0
+dig_floor = 0.5
+vein_pulls = 26
+richness_gain = 1.9
+max_parts = 3
+hybrid_hp = 0.72
+walk_speed = 118.0
+dig_up_grace = 3.0
+chamber_waves = Array[int]([3, 3, 4, 4, 4, 3])
+hp_scale_per_chamber = 0.17
+breath = 2.2
+next_wave_at = 0.45
+collapsed_by_chamber = Array[int]([0, 2, 5, 8, 12, 16])
+right_bias = 1.0
+min_per_lane = 2
+safe_cols = Array[int]([0])
+rubble_life = 18.0
+rubble_every = 12.0
+rubble_max = 3
+sapper_clear = 2.2
+sapper_self_dig = 4.4
+shot_damage = Array[int]([22, 42, 61])
+shot_cooldown = Array[float]([1.3, 1.25, 1.2])
+gravel_damage = 12
+gravel_cooldown = 1.7
+shove_per_sapper = 4.0
+shove_cap = 10.0

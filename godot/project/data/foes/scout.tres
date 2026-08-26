@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="FoeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/foe_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"scout"
+display_name = "Scout"
+hp = 150
+speed = 42.0
+dps = 16.0
+purse = 9
+points = 2
+leaps = false
+soak = 0.0
+boss = false

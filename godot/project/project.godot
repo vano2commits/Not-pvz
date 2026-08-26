@@ -1,0 +1,31 @@
+; Hoard — Godot 4 port of prototype/demo.html
+; Engine configuration. Edit through the editor rather than by hand where possible.
+
+config_version=5
+
+[application]
+
+config/name="Hoard"
+config/description="Goblins defend a caravan of junk-treasure from adventuring heroes."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+Game="*res://scripts/game.gd"
+Run="*res://scripts/run.gd"
+
+[display]
+
+window/size/viewport_width=980
+window/size/viewport_height=700
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0

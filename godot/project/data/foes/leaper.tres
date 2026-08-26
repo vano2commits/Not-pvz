@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="FoeDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/foe_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"leaper"
+display_name = "Leaper"
+hp = 190
+speed = 34.0
+dps = 24.0
+purse = 17
+points = 2
+leaps = true
+soak = 0.0
+boss = false

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="UnitDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/unit_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"chucker"
+display_name = "Chucker"
+cost = 70
+hp = 120
+recharge = 6.0
+tint = Color(0.435, 0.749, 0.357, 1)
+blurb = "Throws rocks. The baseline."
+answers = &""

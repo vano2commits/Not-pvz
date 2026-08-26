@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="UnitDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/unit_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"barricade"
+display_name = "Barricade"
+cost = 50
+hp = 520
+recharge = 14.0
+tint = Color(0.247, 0.541, 0.290, 1)
+blurb = "Doesn't fight. Won't move."
+answers = &""

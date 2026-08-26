@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="WorldDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"scree"
+display_name = "The Scree"
+rule = "Rockfall buries a cell every few seconds. You cannot build on rubble."
+fix = "A Sapper shovels its lane clear."
+answer = &"sapper"
+purse_mult = 1.0
+dig_mult = 1.0
+bore_mult = 1.0
+rockfall = true
+bear_traps = true

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="UnitDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/unit_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"sapper"
+display_name = "Sapper"
+cost = 75
+hp = 150
+recharge = 9.0
+tint = Color(0.725, 0.541, 0.306, 1)
+blurb = "Clears rubble in its lane."
+answers = &"scree"
