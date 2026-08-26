@@ -24,8 +24,8 @@ node tools/gdcheck.mjs project
 
 ## Open it
 
-1. Godot 4.3 or newer. Yours is at
-   `C:\Program Files (x86)\Steam\steamapps\common\Godot Engine`.
+1. Godot 4.3 or newer. `project.godot` declares 4.3, so a newer editor will offer
+   to convert it — that is expected and fine. Tested target is 4.7.
 2. **Import** → pick `godot/project/project.godot`.
 3. Let it import. F5 to run.
 
@@ -85,27 +85,77 @@ which is the first thing worth doing.
 
 ## The MCP toolkit
 
-`godot_mcp_toolkit` runs on the machine with the editor, and binds `127.0.0.1`. It cannot
-be installed from this session — that container is a cloud Linux VM with no Godot and no
-route to your desktop — so this part is yours to run:
+`godot_mcp_toolkit` runs on the machine with the editor and binds `127.0.0.1`. It cannot
+be installed from the session that wrote this port — that is a cloud Linux container with
+no Godot and no route to a desktop — so this part is yours to run. Everything below was
+hit for real on Windows 11 with Godot 4.7, in this order.
 
-1. In Godot: **AssetLib** → search "Godot MCP Toolkit" → Download → Install, then
-   **Project → Project Settings → Plugins** → enable it.
-2. In a terminal (needs Node.js 22 or newer):
-   ```
-   npm install -g @npgamedev/godot-mcp-server
-   ```
-3. Register it with your local Claude Code, from the project folder:
-   ```
-   claude mcp add godot -- godot-mcp-server
-   ```
-4. Restart Claude Code and check `/mcp` lists it. The editor must be open with the
-   project loaded for the tools to connect.
+### 1. Install the plugin by hand, not through AssetLib
 
-Two things worth knowing before you turn it on. `GODOT_MCP_READ_ONLY=1` hides every
-mutating tool, which is the setting to start with — let it read the scene tree and the
-errors before you let it edit anything. And it is only useful to a Claude Code running on
-your machine; a cloud session like this one cannot reach a localhost bridge on your
-desktop, so pointing this session at it will not work.
+There is no AssetLib tab in Godot 4.7. The old asset library is being replaced by the
+Asset Store and the transition completes in 4.7, so the tab is simply gone. On 4.5 and
+earlier it lives top-centre next to 2D / 3D / Script, and can also be hidden by
+unticking it under **Editor → Manage Editor Features**.
 
-Sources for the above: the toolkit's Asset Library page and its server package.
+Installing a plugin by hand works on every version and avoids the question:
+
+1. Download the zip from the toolkit's asset page or its GitHub releases.
+2. Extract it so you end up with `godot/project/addons/<plugin>/plugin.cfg`. If the zip
+   wraps `addons/` in a top-level folder, drop the wrapper — `addons/` sits next to
+   `project.godot`.
+3. Reopen the project → **Project → Project Settings → Plugins** → Enable.
+
+### 2. Install the bridge
+
+Needs Node 22+.
+
+```
+npm install -g @npgamedev/godot-mcp-server
+```
+
+On Windows PowerShell this fails with `npm.ps1 cannot be loaded because running scripts
+is disabled on this system`. That is PowerShell's execution policy blocking npm's
+PowerShell shim, and it has nothing to do with the package. Call the batch shim instead
+and nothing about the machine needs changing:
+
+```
+npm.cmd install -g @npgamedev/godot-mcp-server
+```
+
+The alternatives are running it from `cmd.exe`, or `Set-ExecutionPolicy -Scope
+CurrentUser -ExecutionPolicy RemoteSigned` if you want npm to work normally in
+PowerShell from then on.
+
+### 3. Install Claude Code locally
+
+The MCP bridge is only useful to a Claude Code running on the same machine as the
+editor. A cloud session cannot reach a localhost bridge on your desktop, so this is a
+separate install rather than something that carries over from the web app:
+
+```
+irm https://claude.ai/install.ps1 | iex
+```
+
+Restart the shell so `claude` is on PATH. The npm route
+(`npm.cmd install -g @anthropic-ai/claude-code`) still works but is the legacy path and
+does not self-update.
+
+### 4. Wire them together
+
+From `godot/project`:
+
+```
+claude mcp add godot -- godot-mcp-server
+```
+
+Restart Claude Code and check `/mcp` lists it. The editor must be open with the project
+loaded.
+
+Start with `GODOT_MCP_READ_ONLY=1`, which hides every mutating tool — let it read the
+scene tree and the error list before you let it edit anything.
+
+### None of this blocks opening the project
+
+The toolkit is a convenience. The port is unrun code, and the fastest way to make it run
+is to open `project.godot` and work through whatever the Debugger panel reports. Do that
+first; the plugin can wait.
