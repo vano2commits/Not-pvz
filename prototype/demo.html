@@ -179,6 +179,24 @@
   .gob-runs { position: absolute; top: 7px; right: 9px; font-family: var(--data);
               font-size: 9.5px; color: var(--gold-dim); }
   .worlds { display: grid; gap: 11px; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); }
+
+  /* A route card. The cost is red and comes first, because that is the part you are
+     actually deciding about - the reward is why you are willing to. */
+  .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+           margin: 12px 0 4px; }
+  .route { display: flex; flex-direction: column; gap: 5px; text-align: left;
+           padding: 15px 16px 16px; cursor: pointer; color: var(--ink);
+           background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+           border: 1px solid #3b3340; border-left: 4px solid var(--alarm); border-radius: 4px;
+           transition: transform .12s, border-color .12s, background .12s; }
+  .route:active { transform: translateY(1px); }
+  .route-where { font-family: var(--data); font-size: 10px; letter-spacing: .16em;
+                 text-transform: uppercase; color: var(--ink-dim); }
+  .route-name { font-family: var(--display); font-size: 21px; letter-spacing: .02em;
+                text-transform: uppercase; color: var(--gold); line-height: 1.05; }
+  .route-cost { font-size: 13.5px; color: #e0897a; line-height: 1.42; }
+  .route-gain { font-size: 13px; color: var(--goblin); line-height: 1.42;
+                border-top: 1px solid #3b3340; padding-top: 7px; margin-top: 3px; }
   .world { background: var(--stone); border: 1px solid #3b3340; border-radius: 4px; padding: 13px;
            display: flex; flex-direction: column; gap: 7px; cursor: pointer; text-align: left;
            color: var(--ink); font-family: var(--body); transition: transform .1s, filter .12s; }
@@ -207,7 +225,9 @@
   @media (max-width: 560px) {
     .meta { padding: 10px 10px 84px; gap: 10px; }
     .m-panel { padding: 12px; gap: 9px; }
-    .crew, .worlds { grid-template-columns: 1fr; gap: 8px; }
+    .crew, .worlds, .cards { grid-template-columns: 1fr; gap: 8px; }
+    .route { padding: 12px 13px 13px; }
+    .route-name { font-size: 18px; }
     .gob, .world { min-height: 56px; padding: 11px 13px; }
     .gob-name { font-size: 17px; }
     .gob-note { font-size: 12.5px; }
@@ -544,7 +564,9 @@
   // however many are open, because 250 gold buys two Chuckers and no more — three lanes
   // at once is a trap you pay a bear trap for through no fault of your own.
   const laneBudget = ix => !tutorial() ? 99 : ix === 0 ? 1 : ix === 1 ? 2 : 99;
-  const laneIsOpen = r => LANE_ORDER.indexOf(r) < lanesOpen(Math.max(S.waveIx, 0));
+  const laneIsOpen = r => !CFG.shut.includes(r)
+                       && LANE_ORDER.indexOf(r) < lanesOpen(Math.max(S.waveIx, 0));
+  const isFlooded = c => CFG.flood.includes(c);
 
   // Purses are the whole early economy — there is no sun falling from the sky here, so
   // a cleared wave has to pay for the answer to the next one. Wave 1 nets ~60, which is
@@ -560,6 +582,11 @@
     pavise:   { name: "Pavise",   hp: 300, speed: 16, dps: 26, purse: 20, pts: 3, soak: 14 },
     // Fast, fragile, and arrives in a clump. Punishes a lane you left thin.
     runner:   { name: "Runner",   hp: 90,  speed: 58, dps: 12, purse: 7, pts: 1 },
+    // The ending. It does not walk a lane - it works its way across the board toward
+    // whichever lane you have left emptiest, and calls for help into that same lane. A
+    // board stacked into one column kills it slowly and loses everywhere else, which is
+    // the exact habit the demo spends six chambers trying to break.
+    reeve:    { name: "The Reeve", hp: 1600, speed: 10, dps: 38, purse: 90, pts: 6, boss: true },
   };
 
   // Each world breaks one thing you lean on and names the goblin that answers it —
@@ -590,6 +617,42 @@
   // against each other rather than argued about.
   const WIPE_BOARD = true;
 
+  // ---------------------------------------------------------------- route cards
+  // Two offered between chambers, each naming what it costs the board and what it gives
+  // the roster, so there is one decision and it is "how much board will I sell for this".
+  //
+  // The guard: randomness may add upside, it may never own a counter, an economy, or a
+  // place to stand. Every card therefore carries its own answer - its gain must address
+  // the kind of hurt its cost inflicts - which makes any pair safe by construction
+  // instead of by careful curation. ROUTE_CARDS is exported so a test can assert it.
+  const ROUTE_CARDS = [
+    { id: "seam", name: "The narrow seam", where: "down the scree",
+      cost: { kind: "lanes", text: "The top and bottom lanes cave in. Three lanes for the rest of the run.",
+              apply: r => { r.shut = [0, 4]; } },
+      gain: { id: "ricochet", role: "chucker", answers: ["lanes"] } },
+
+    { id: "workings", name: "The old workings", where: "flooded floor",
+      cost: { kind: "ground", text: "The far two columns are waterlogged. Nothing can be placed there.",
+              apply: r => { r.flood = [5, 6]; } },
+      gain: { id: "prospect", role: "digger", answers: ["ground"] } },
+
+    { id: "drift", name: "The picked-over drift", where: "worked out",
+      cost: { kind: "ground", text: "Someone got here first. Every pocket is half spent.",
+              apply: r => { r.drain = (r.drain || 1) * 0.5; } },
+      gain: { id: "sniffer", role: "digger", answers: ["ground"] } },
+
+    { id: "gallery", name: "The long gallery", where: "loose roof",
+      cost: { kind: "roof", text: "The roof is bad the whole way. Rockfall comes twice as often.",
+              apply: r => { r.rubbleEvery = 0.5; } },
+      gain: { id: "packed", role: "barricade", answers: ["roof"] } },
+
+    { id: "march", name: "The forced march", where: "they heard you",
+      cost: { kind: "tempo", text: "Word is out. Every hero from here on moves a quarter faster.",
+              apply: r => { r.speedMul = (r.speedMul || 1) * 1.25; } },
+      gain: { id: "quick", role: "chucker", answers: ["tempo"] } },
+  ];
+
+  const B_ = "reeve";
   const S_ = "squire", C_ = "scout", G_ = "sergeant", L_ = "leaper",
         P_ = "pavise", R_ = "runner";
   const WAVES = [
@@ -607,11 +670,14 @@
 
   // ===================================================================== state
   // Set by the meta layer before each chamber.
-  let CFG = { world: null, chapter: 1, chamber: 1, roles: ["chucker","digger","barricade"] };
+  // A route card's cost is a permanent change to the board, so it lives on CFG and is
+  // handed back in every chamber after the one that took it.
+  let CFG = { world: null, chapter: 1, chamber: 1, roles: ["chucker","digger","barricade"],
+              shut: [], flood: [], rubbleEvery: 1, speedMul: 1 };
   let S;
   function newRun() {
     S = {
-      coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 5.0,
+      coins: START_COINS, waveIx: -1, phase: "intro", phaseT: 5.0, waveStack: 0,
       goblins: [], foes: [], shots: [], parts: [], rings: [], pops: [], loot: [],
       traps: new Array(ROWS).fill(CFG.world !== "deep"),
       cart: CFG.world === "deep" ? 3 : 0,
@@ -636,6 +702,20 @@
 
   const cellOf = g => ({ x: OX + g.col * CELL, y: OY + g.row * CELL });
   const laneY = r => OY + r * CELL;
+  // How much you have standing in each lane, in bodies. The Reeve reads this and goes
+  // where the answer is "not much".
+  function laneWeight(r) {
+    return S.goblins.reduce((a, g) => a + (g.row === r && g.hp > 0 ? g.parts.length : 0), 0);
+  }
+  function emptiestLane() {
+    let best = null;
+    for (let r = 0; r < ROWS; r++) {
+      if (!laneIsOpen(r)) continue;
+      const w = laneWeight(r);
+      if (!best || w < best.w) best = { r, w };
+    }
+    return best ? best.r : 2;
+  }
   const gobAt = (c, r) => S.goblins.find(g => g.col === c && g.row === r && g.hp > 0);
   const maxHpOf = g => g.parts.reduce((a, t) => a + UNITS[t].hp, 0)
                        * (g.parts.length > 1 ? 0.72 : 1)
@@ -688,10 +768,21 @@
   // Six chambers of roughly two minutes, not three of five. The old ramp
   // (3 + chamber*2) put the entire wave table in chamber 2 - survivable only because
   // you walked in with a board already standing.
-  const CHAMBER_WAVE_COUNT = [3, 3, 4, 4, 5, 5];
+  const CHAMBER_WAVE_COUNT = [3, 3, 4, 4, 4, 3];
+  // A column, not a crowd. Front-loaded single-target damage kills the front rank very
+  // well and the queue behind it keeps walking, so the answer is anything that reaches
+  // past it - splash, a shove, a slow, or a wall bought with what a Digger earned. Every
+  // one of those is a body made of more than one kind of goblin, which is the behaviour
+  // the fusion system needs and cannot otherwise ask for.
+  const COLUMN = { name: "Down one throat", list: [S_,G_,S_,S_,G_,S_,G_,S_,S_,G_,S_,G_], stack: 1 };
+  const BOSS   = { name: "The Reeve", list: [B_], boss: true };
   function wavesForChamber() {
-    const n = CHAMBER_WAVE_COUNT[Math.min(CFG.chamber, CHAMBERS) - 1] || 3;
-    return WAVES.slice(0, Math.min(WAVES.length, n));
+    const c = Math.min(CFG.chamber, CHAMBERS);
+    const n = CHAMBER_WAVE_COUNT[c - 1] || 3;
+    const out = WAVES.slice(0, Math.min(WAVES.length, n));
+    if (c >= 5) out.push(COLUMN);       // introduced in 5, then it is the boss's whole idea
+    if (c === CHAMBERS) out.push(BOSS);
+    return out;
   }
   let CHAMBER_WAVES = WAVES;
   // The board carries across a chapter, so each chamber has to ask a good deal more
@@ -705,7 +796,7 @@
     if (S.waveIx >= CHAMBER_WAVES.length) { victory(); return; }
     const w = CHAMBER_WAVES[S.waveIx];
     let t = 0;
-    const gap = Math.max(0.5, 1.6 - S.waveIx * 0.17);
+    const gap = w.stack ? 0.42 : Math.max(0.5, 1.6 - S.waveIx * 0.17);
     // Deeper CHAPTERS send more bodies; deeper chambers do not. Stacking extra spawns
     // on top of the per-chamber hp ramp and the price markup made chamber three
     // unwinnable rather than hard — measured at 0% held across every wave multiplier
@@ -723,6 +814,7 @@
       return { type: swap, at: t };
     });
     S.waveLanes = [];
+    S.waveStack = w.stack || 0;
     for (let r = 0; r < ROWS; r++) { S.laneLoad[r] *= 0.7; if (S.laneQuiet[r] > 0) S.laneQuiet[r]--; }
     S.phase = "fight"; S.phaseT = 0;
     S.bannerText = "WAVE " + (S.waveIx + 1) + " — " + w.name.toUpperCase();
@@ -733,11 +825,13 @@
   function chooseLane() {
     let open = LANE_ORDER.slice(0, lanesOpen(S.waveIx)).filter(r => S.laneLive[r]);
     if (!open.length) open = LANE_ORDER.slice(0, lanesOpen(S.waveIx));
-    const cap = Math.min(laneBudget(S.waveIx), open.length);
+    const cap = Math.min(S.waveStack || laneBudget(S.waveIx), open.length);
     // Once a wave has spent its lane allowance it keeps coming down the lanes it already
     // opened with, rather than picking a fresh one you have nothing standing in.
     const pool = S.waveLanes.length >= cap ? S.waveLanes : open;
     const take = r => { if (!S.waveLanes.includes(r)) S.waveLanes.push(r); return r; };
+    // a column goes down the lane you have least in, so it cannot be pre-answered
+    if (S.waveStack && !S.waveLanes.length) return take(emptiestLane());
     if (S.spawnCount < 2 && pool === open) return take(pick(pool));
     const w = pool.map(r => S.laneQuiet[r] > 0 ? 1e-6 : 1 / (1 + S.laneLoad[r]));
     const tot = w.reduce((a, b) => a + b, 0);
@@ -750,7 +844,7 @@
     const d = FOES[type];
     const hp = Math.round(d.hp * hpScale());
     S.foes.push({ type, lane, x: W + 26, hp, maxHp: hp,
-                  speed: d.speed * rnd(0.82, 1.18), hitT: 0, bleeding: false,
+                  speed: d.speed * rnd(0.82, 1.18) * CFG.speedMul, hitT: 0, bleeding: false,
                   bob: rnd(0, 6.3), squash: 0, step: 0, dead: false });
     S.spawnCount++; S.laneLoad[lane] += d.pts;
   }
@@ -825,7 +919,7 @@
       S.buryT -= dt;
       // never more than a few at once, or the board quietly disappears
       if (S.buryT <= 0 && Object.keys(S.buried).length < 3) {
-        S.buryT = 12;
+        S.buryT = 12 * CFG.rubbleEvery;
         const free = [];
         for (let c = 1; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
           if (!laneIsOpen(r) || S.buried[c + "," + r]) continue;
@@ -849,7 +943,7 @@
       S.phaseT += dt;
       while (S.queue.length && S.queue[0].at <= S.phaseT) {
         const e = S.queue.shift();
-        spawnFoe(e.type, chooseLane());
+        spawnFoe(e.type, e.lane !== undefined ? e.lane : chooseLane());
       }
       // the next wave comes when this one is mostly broken, the way the original does it,
       // rather than after the board is clear and a long pause on top
@@ -1095,7 +1189,44 @@
         f.bleeding = true;
         burst(f.x, laneY(f.lane) + 20, 8, { colors: ["#c9ced8", "#8b93a2"], spread: 180, size: [1.4, 3] });
       }
-      if (f.bleeding) f.hp -= 11 * dt;
+      if (f.bleeding && !d.boss) f.hp -= 11 * dt;
+
+      // ---- The Reeve steers and shouts
+      if (d.boss) {
+        if (f.laneF === undefined) { f.laneF = f.lane; f.dir = f.lane < 2 ? 1 : -1; }
+        // It walks the width of the board, not a lane: a steady sweep up and down while it
+        // advances. Two earlier versions failed. Hunting the emptiest lane on a timer made
+        // it unkillable - there is always a softest lane and it just walked down it - and
+        // flinching away from damage did the same thing for the same reason. A sweep is
+        // indifferent to your board, which is what makes your board the thing being tested:
+        // guns in one lane only touch it a fifth of the time, and the four lanes you left
+        // empty are where it is calling everyone else.
+        f.sweepT = (f.sweepT === undefined ? 2.2 : f.sweepT) - dt;
+        if (f.sweepT <= 0) {
+          f.sweepT = 2.6;
+          let next = f.lane + f.dir;
+          if (next < 0 || next >= ROWS || !laneIsOpen(next)) {
+            f.dir *= -1;
+            next = f.lane + f.dir;
+          }
+          if (next >= 0 && next < ROWS && laneIsOpen(next)) {
+            f.lane = next; f.squash = 1.2;
+            ring(f.x, laneY(f.lane) + CELL * 0.5, 62, "rgba(209,85,63,.55)", 3, 0.36);
+          }
+        }
+        f.laneF += (f.lane - f.laneF) * Math.min(1, dt * 3.4);
+        f.callT = (f.callT === undefined ? 6 : f.callT) - dt;
+        if (f.callT <= 0) {
+          f.callT = 15;
+          const into = emptiestLane();
+          popText(f.x, laneY(f.lane) - 4, "TO ME!", "#d1553f");
+          ring(f.x, laneY(f.lane) + CELL * 0.5, 150, "rgba(209,85,63,.75)", 4, 0.5);
+          kick(6); Sound.play("wave");
+          for (let i = 0; i < 2; i++)
+            S.queue.push({ type: i === 1 ? G_ : S_, at: S.phaseT + 0.25 + i * 0.35, lane: into });
+          S.queue.sort((a, b) => a.at - b.at);
+        }
+      }
 
       const col = Math.floor((f.x - OX) / CELL);
       const wall = col >= 0 && col < COLS ? gobAt(col, f.lane) : null;
@@ -1149,10 +1280,28 @@
       }
 
       if (f.x <= OX) {
+        // A bear trap is a safety net for a hero, not an answer to the ending. Letting it
+        // one-shot the Reeve meant a board stacked into one lane simply won: the boss
+        // walked around the guns into an empty lane, as designed, and the trap in that
+        // lane killed it for free.
+        if (d.boss) {
+          f.hp -= 900; f.hitT = 0.3; f.squash = 1.2;
+          if (S.traps[f.lane]) {
+            S.traps[f.lane] = false; S.laneQuiet[f.lane] = 2;
+            popText(OX + 40, laneY(f.lane) + 6, "IT SHRUGS IT OFF", "#d1553f");
+            ring(OX + 22, laneY(f.lane) + CELL * 0.6, 150, "rgba(232,192,90,.7)", 4, 0.4);
+            kick(9); Sound.play("trap");
+          }
+          // it does not stop at the caravan - it turns round and comes again
+          f.x = W + 20; f.lane = emptiestLane(); f.laneF = f.lane;
+          if (S.cart > 0) S.cart--;
+          continue;
+        }
         if (S.traps[f.lane]) {
           S.traps[f.lane] = false;
           S.laneQuiet[f.lane] = 2;
-          for (const v of S.foes) if (v.lane === f.lane && v.hp > 0) { v.hp = 0; v.byTrap = true; }
+          for (const v of S.foes)
+            if (v.lane === f.lane && v.hp > 0 && !FOES[v.type].boss) { v.hp = 0; v.byTrap = true; }
           ring(OX + 22, laneY(f.lane) + CELL * 0.6, 190, "rgba(232,192,90,.8)", 5, 0.45);
           burst(OX + 22, laneY(f.lane) + CELL * 0.6, 24,
                 { colors: ["#e8c05a", "#fff3cf", "#8f8698"], spread: 380, size: [1.8, 4.6] });
@@ -1161,9 +1310,10 @@
           // it gets through, and the caravan pays for it
           S.cart--;
           f.hp = 0; f.byTrap = true;
-          for (const v of S.foes) if (v.lane === f.lane && v.hp > 0 && v.x < OX + CELL) {
-            v.hp = 0; v.byTrap = true;
-          }
+          for (const v of S.foes)
+            if (v.lane === f.lane && v.hp > 0 && v.x < OX + CELL && !FOES[v.type].boss) {
+              v.hp = 0; v.byTrap = true;
+            }
           ring(OX + 22, laneY(f.lane) + CELL * 0.6, 220, "rgba(209,85,63,.9)", 6, 0.5);
           burst(OX + 10, H / 2, 26,
                 { colors: ["#e8c05a", "#8a7134", "#d1553f"], spread: 380 });
@@ -1482,19 +1632,20 @@
   }
 
   function drawFoe(f) {
-    const y = laneY(f.lane) + CELL * 0.56;
+    const laneOf = f.laneF !== undefined ? f.laneF : f.lane;
+    const y = OY + laneOf * CELL + CELL * 0.56;
     const hop = f.vault !== undefined ? -Math.sin(f.vault * Math.PI) * 44 : 0;
     const bob = Math.sin(f.bob) * (f.type === "scout" ? 3 : 2) + hop;
     if (f.slowT > 0) {
       cx.fillStyle = "rgba(154,127,196,.28)";
-      cx.beginPath(); cx.ellipse(f.x, laneY(f.lane) + CELL * 0.78, 17, 5, 0, 0, 6.284); cx.fill();
+      cx.beginPath(); cx.ellipse(f.x, OY + laneOf * CELL + CELL * 0.78, 17, 5, 0, 0, 6.284); cx.fill();
     }
     const tint = f.type === "scout" ? "#8d8496" : f.type === "sergeant" ? "#b98a4e"
                : f.type === "leaper" ? "#a9c0d8" : f.type === "pavise" ? "#7e8a9c"
-               : f.type === "runner" ? "#d8c9a0" : "#c9ced8";
+               : f.type === "runner" ? "#d8c9a0" : f.type === "reeve" ? "#8f4634" : "#c9ced8";
     const scale = (f.type === "scout" ? 0.9 : f.type === "sergeant" ? 1.16
                  : f.type === "leaper" ? 0.94 : f.type === "pavise" ? 1.1
-                 : f.type === "runner" ? 0.8 : 1) * K;
+                 : f.type === "runner" ? 0.8 : f.type === "reeve" ? 1.75 : 1) * K;
     const sq = f.squash > 0 ? ease(clamp(f.squash, 0, 1)) : 0;
 
     cx.fillStyle = "rgba(0,0,0,.3)";
@@ -1637,6 +1788,26 @@
       cx.restore();
     }
 
+    // Water standing in the far columns. Drawn under the goblins so it reads as ground
+    // rather than as a veil, and it moves, because still ground looks placeable.
+    for (let c = 0; c < COLS; c++) {
+      if (!isFlooded(c)) continue;
+      const x = OX + c * CELL;
+      cx.save();
+      cx.beginPath(); cx.rect(x, OY, CELL, ROWS * CELL); cx.clip();
+      cx.fillStyle = "rgba(28,52,68,.82)"; cx.fillRect(x, OY, CELL, ROWS * CELL);
+      for (let i = 0; i < 34; i++) {
+        const a = (i * 2.399 + c * 1.13) % 1, b2 = (i * 4.771 + c * 0.61) % 1;
+        const py = OY + b2 * ROWS * CELL;
+        const px = x + ((a * CELL + Math.sin(S.t * 0.7 + i) * 9) % CELL + CELL) % CELL;
+        cx.fillStyle = i % 3 ? "rgba(111,168,201,.30)" : "rgba(160,205,228,.22)";
+        cx.fillRect(px, py, 11 + (i % 4) * 5, 1.6);
+      }
+      cx.strokeStyle = "rgba(111,168,201,.45)"; cx.lineWidth = 1.5;
+      cx.strokeRect(x + 0.75, OY + 0.75, CELL - 1.5, ROWS * CELL - 1.5);
+      cx.restore();
+    }
+
     // Rubble from a rockfall. Same visual language as a caved-in lane, one cell wide.
     for (const k in S.buried) {
       const [bc, br] = k.split(",").map(Number);
@@ -1706,6 +1877,7 @@
       // reads red when the body standing there has no room. A goblin lifted off the board
       // has nowhere to go but into another goblin, so bare ground is red for it.
       const ok = laneIsOpen(hover.row) && !S.buried[hover.col + "," + hover.row]
+                 && !isFlooded(hover.col)
                  && (on ? on !== S.selGob && on.parts.length + carry.length <= MAX_PARTS
                         : !S.selGob)
                  && (S.selGob || (S.coins >= costOf(S.selUnit) && S.cool[S.selUnit] <= 0));
@@ -1922,6 +2094,13 @@
     if (S.buried[col + "," + row]) {
       Sound.play("deny");
       popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12, "UNDER RUBBLE", "#8a8095");
+      return false;
+    }
+    if (isFlooded(col)) {
+      Sound.play("deny");
+      popText(OX + col * CELL + CELL / 2, OY + row * CELL + 12, "WATERLOGGED", "#6fa8c9");
+      burst(OX + col * CELL + CELL / 2, OY + row * CELL + CELL / 2, 8,
+            { colors: ["#4a7a94", "#6fa8c9"], spread: 150, size: [1.4, 3], life: [0.2, 0.45] });
       return false;
     }
     if (S.cool[key] > 0) { Sound.play("deny"); denyCard(key); return false; }
@@ -2291,6 +2470,8 @@
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
     nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
     BODY, BODY_KEYS: Object.keys(BODY), BODY_COUNT: Object.keys(BODY).length,
+    ROUTE_CARDS,
+    get WAVE_COUNT() { return CHAMBER_WAVES.length; },
     costOf,
     smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
     smallCount: (role, id) => smallOf(role, id),
@@ -2300,7 +2481,8 @@
     get cfg() { return CFG; },
     // Start a chamber for the meta layer. cfg = { world, chapter, chamber, roles }.
     begin(cfg, done) {
-      CFG = Object.assign({ world: null, chapter: 1, chamber: 1 }, cfg);
+      CFG = Object.assign({ world: null, chapter: 1, chamber: 1,
+                            shut: [], flood: [], rubbleEvery: 1, speedMul: 1 }, cfg);
       ROSTER = cfg.roles && cfg.roles.length ? cfg.roles.slice() : ROSTER;
       UPS = cfg.upgrades || {};
       SM = cfg.smalls ? JSON.parse(JSON.stringify(cfg.smalls)) : {};
@@ -2396,9 +2578,11 @@
     show([p, row]);
   }
 
+  const ROUTE_AT = [2, 4];      // a fork after chamber 2 and after chamber 4
   function begin() {
     R = { chamber: 1, board: null, veins: null, gold: undefined,
-          smalls: {}, upgrades: {}, built: {}, dead: 0 };
+          smalls: {}, upgrades: {}, built: {}, dead: 0,
+          shut: [], flood: [], rubbleEvery: 1, speedMul: 1, drain: 1, taken: [] };
   }
 
   function rosterFor(chamber) {
@@ -2414,7 +2598,9 @@
     window.scrollTo(0, 0);
     V.begin({ world: worldOf(R.chamber), chapter: 1, chamber: R.chamber,
               roles: rosterFor(R.chamber), upgrades: R.upgrades, smalls: R.smalls,
-              board: R.board, carryGold: R.gold, veins: R.veins }, chamberDone);
+              board: R.board, carryGold: R.gold, veins: R.veins,
+              shut: R.shut, flood: R.flood,
+              rubbleEvery: R.rubbleEvery, speedMul: R.speedMul }, chamberDone);
   }
 
   function chamberDone(won, goldLeft, board, veins) {
@@ -2424,6 +2610,7 @@
     if (!won) return ending(false);
     R.veins = veins;                       // drained ground stays drained
     if (R.chamber >= CHAMBERS) return ending(true);
+    if (ROUTE_AT.includes(R.chamber)) return fork();
     held();
   }
 
@@ -2449,6 +2636,45 @@
     };
     row.append(go);
     show([p, row]);
+  }
+
+  // ------------------------------------------------------------------ the fork
+  function fork() {
+    const pool = V.ROUTE_CARDS.filter(c => !R.taken.includes(c.id));
+    const pick = [];
+    while (pick.length < 2 && pool.length) pick.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    const p = el("div", "m-panel");
+    p.append(el("h2", null, "Two ways down"));
+    const n = el("p", "m-note");
+    n.innerHTML = "Both of them cost you something you cannot get back. Pick the one you "
+      + "can afford to lose.";
+    p.append(n);
+    const cards = el("div", "cards");
+    for (const c of pick) {
+      const b = el("button", "route");
+      b.append(el("span", "route-where", c.where));
+      b.append(el("span", "route-name", c.name));
+      const cost = el("span", "route-cost", c.cost.text);
+      const up = V.UPGRADES[c.gain.id];
+      const gain = el("span", "route-gain",
+        V.UNITS[c.gain.role].name + " · " + up.name + " — " + up.note);
+      b.append(cost, gain);
+      b.onclick = () => {
+        c.cost.apply(R);
+        R.taken.push(c.id);
+        (R.upgrades[c.gain.role] = R.upgrades[c.gain.role] || []).push(c.gain.id);
+        if (R.drain !== 1 && R.veins) {
+          for (const k in R.veins) R.veins[k] *= R.drain;
+          R.drain = 1;
+        }
+        R.chamber++;
+        R.board = null; R.gold = undefined;
+        enterChamber();
+      };
+      cards.append(b);
+    }
+    p.append(cards);
+    show([p, ledgerStrip()]);
   }
 
   function ledgerStrip() {
