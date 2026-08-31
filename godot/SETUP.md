@@ -43,6 +43,43 @@ swept rather than chosen.
 Units, heroes and worlds are one `.tres` each under `data/`. Adding a hero is a new
 resource plus a line in `game.gd`'s preload list; adding a world is the same.
 
+## The art
+
+Pixel art, authored as text and rendered by a script.
+
+```
+python3 tools/build_art.py          # -> project/art/*.png
+```
+
+`tools/sprites.py` is the art. Each sprite is composed from primitives - ellipses,
+triangles, lines - onto a character grid, and a final `outline()` pass puts a hard black
+edge around everything, which is most of what makes a shape read at this size. Colours
+come from one small shared palette in `tools/pixelart.py`, so changing a palette entry
+repaints every sprite at once.
+
+Authoring it this way buys three things a folder of PNGs does not: the art is diffable in
+a pull request, a unit's colour is one line rather than a repaint, and regenerating is
+deterministic. It is not a replacement for an artist - treat what is there as a coherent
+placeholder set that establishes the palette and the silhouettes.
+
+**Scale.** Sprites are 32px a cell and drawn at 3x, so the board keeps the 96px cells
+every balance number was swept against. Three is an integer, so nothing is ever
+resampled. `textures/canvas_textures/default_texture_filter=0` in project settings pins
+filtering to nearest; without that line every sprite is bilinear-filtered into mush.
+
+**Silhouette does the work.** In the prototype the heroes measured 0.79-0.81 outline
+overlap when they differed only by colour and scale, which is another way of saying they
+all looked the same. Every hero now has something in its outline that nothing else has -
+a round shield, a plume twice its head's height, square pauldrons, hair streaming back
+off a bare head - and the goblins have ears, which is the identity the first pass of the
+art missed entirely and which made every unit read as a potato.
+
+**What each sprite is for.** Ground comes in two shades that alternate by row, so lanes
+read as lanes without a drawn grid. Gold in the ground has five stages from rich to
+spent, so a cell's worth is visible without a number on it. Rubble is a heap and
+collapsed ground is a hole, deliberately unalike: rubble clears and collapse never does,
+and mistaking one for the other costs you a goblin.
+
 ## Shape of the code
 
 ```

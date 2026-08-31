@@ -1,30 +1,50 @@
 ## Draws the chamber and turns taps into placements.
 ##
-## Everything is drawn in immediate mode, exactly as the prototype's canvas was. That is
-## deliberate for the port: the visuals move across one-to-one and stay editable as
-## code, and swapping any one of these `_draw` calls for a real sprite later is a local
-## change rather than a rewrite.
+## Everything is a sprite from `art/`, authored at 32px a cell and drawn at 3x. The board
+## stays on 96px cells — every balance number in the game was swept against that — and
+## because 3 is an integer, nothing is ever resampled and the art stays pixel-perfect.
+## Project settings pin the default texture filter to nearest, which is the other half of
+## keeping it crisp.
 class_name BoardView
 extends Control
 
 signal goblin_tapped(g: Goblin)
 signal ground_tapped(col: int, row: int)
 
+## Sprites are authored at 32px a cell; the board runs on 96px cells.
+const ART := 32
+const SCALE := 3
+
 const CAVE := Color("#141119")
-const ROW_A := Color("#2a2430")
-const ROW_B := Color("#241f26")
 const GOLD := Color("#e8c05a")
 const ALARM := Color("#d1553f")
 const GOBLIN := Color("#6fbf5b")
-const DIM := Color("#8a8095")
 
 var sim: ChamberSim
 var t: Tuning
 var selected: Goblin = null
 var held_unit: String = ""
 
+var tex: Dictionary = {}
+
+func _load_art() -> void:
+	for n in ["goblin_chucker", "goblin_digger", "goblin_barricade", "goblin_sapper",
+			"hero_squire", "hero_scout", "hero_sergeant", "hero_runner", "hero_leaper",
+			"hero_pavise", "hero_reeve", "tile_ground_a", "tile_ground_b", "tile_rubble",
+			"tile_collapsed", "tile_cracking", "tile_water", "prop_coin", "prop_rock",
+			"prop_hoard", "tile_vein_0", "tile_vein_1", "tile_vein_2", "tile_vein_3",
+			"tile_vein_4"]:
+		tex[n] = load("res://art/%s.png" % n)
+
+## Draw a sprite with its top-left at `at`, at the project's integer art scale.
+func _blit(art_name: String, at: Vector2, tone: Color = Color.WHITE) -> void:
+	var tx: Texture2D = tex.get(art_name)
+	if tx == null: return
+	draw_texture_rect(tx, Rect2(at, tx.get_size() * SCALE), false, tone)
+
 func _ready() -> void:
 	t = Game.t
+	_load_art()
 	custom_minimum_size = Vector2(t.origin.x + t.cols * t.cell + 20,
 		t.origin.y + t.rows * t.cell + 24)
 
@@ -72,71 +92,53 @@ func _draw() -> void:
 	for w in sim.walkers: _draw_walker(w)
 	for f in sim.foes: _draw_foe(f)
 	for s in sim.shots:
-		draw_circle(Vector2(s["x"], s["y"]), 5.0, Color("#c9a24a"))
+		_blit("prop_rock", Vector2(s["x"] - 12, s["y"] - 12))
 	_draw_hint()
 
 func _draw_ground() -> void:
 	for r in range(t.rows):
-		var rect := Rect2(t.origin.x, t.origin.y + r * t.cell, t.cols * t.cell, t.cell)
-		draw_rect(rect, ROW_A if r % 2 == 0 else ROW_B)
-		# A lane that has not opened yet is packed rubble, and the reveal is the only
-		# notice you get that a new one is live.
+		for c in range(t.cols):
+			var at := Vector2(t.origin.x + c * t.cell, t.origin.y + r * t.cell)
+			_blit("tile_ground_a" if r % 2 == 0 else "tile_ground_b", at)
+			# What is still in the ground, in five stages. A cell's worth is visible
+			# without a number on it.
+			var left: float = sim.veins.get(sim.cell_key(c, r), 1.0)
+			if left > 0.02:
+				var stage := 4 - clampi(int(left * 5.0), 0, 4)
+				_blit("tile_vein_%d" % stage, at)
+		# A lane that has not opened yet is dark, and the reveal is the only notice you
+		# get that a new one is live.
 		var shut := 1.0 - sim.lane_reveal[r]
 		if shut > 0.01:
-			draw_rect(rect, Color(0.06, 0.05, 0.08, 0.9 * shut))
-	# The gold in the ground, thickening toward the far end.
-	for c in range(t.cols):
-		for r in range(t.rows):
-			var left: float = sim.veins.get(sim.cell_key(c, r), 1.0)
-			if left <= 0.02: continue
-			var n := int(2 + c * 1.2)
-			for i in range(n):
-				var a := fmod(i * 2.399 + c * 1.13 + r * 0.7, 1.0)
-				var b := fmod(i * 4.771 + r * 0.61, 1.0)
-				var pos := Vector2(t.origin.x + c * t.cell + 8 + a * (t.cell - 16),
-					t.origin.y + r * t.cell + 8 + b * (t.cell - 16))
-				draw_circle(pos, 2.2, Color(0.79, 0.63, 0.29, 0.25 + left * 0.45))
-	for c in range(t.cols + 1):
-		var x := t.origin.x + c * t.cell
-		draw_line(Vector2(x, t.origin.y), Vector2(x, t.origin.y + t.rows * t.cell),
-			Color(1, 1, 1, 0.05))
-	for r in range(t.rows + 1):
-		var y := t.origin.y + r * t.cell
-		draw_line(Vector2(t.origin.x, y), Vector2(t.origin.x + t.cols * t.cell, y),
-			Color(1, 1, 1, 0.05))
-	# Water sits under the goblins so it reads as ground rather than as a veil.
+			draw_rect(Rect2(t.origin.x, t.origin.y + r * t.cell,
+				t.cols * t.cell, t.cell), Color(0.05, 0.04, 0.06, 0.92 * shut))
 	for c in sim.flooded:
-		draw_rect(Rect2(t.origin.x + c * t.cell, t.origin.y, t.cell, t.rows * t.cell),
-			Color(0.11, 0.20, 0.27, 0.82))
+		for r in range(t.rows):
+			_blit("tile_water", Vector2(t.origin.x + c * t.cell, t.origin.y + r * t.cell))
 
-## Ground that has already gone. It must not look like rubble, because rubble clears
-## and this never does: a hole with nothing in it, not a heap.
 func _draw_collapsed() -> void:
 	for k in sim.collapsed:
 		var bits: PackedStringArray = k.split(",")
-		var rect := cell_rect(int(bits[0]), int(bits[1]))
-		draw_rect(rect, Color("#08070b"))
-		draw_rect(rect.grow(-2), Color(0.27, 0.24, 0.31, 0.6), false, 2.0)
+		_blit("tile_collapsed", Vector2(t.origin.x + int(bits[0]) * t.cell,
+			t.origin.y + int(bits[1]) * t.cell))
 
-## Ground that goes at the end of THIS chamber, shown the whole time — a collapse you
-## were warned about is a decision and one you were not is a tax.
 func _draw_cracking() -> void:
-	var pulse := 0.5 + sin(sim.clock * 2.1) * 0.5
+	var pulse := 0.55 + sin(sim.clock * 2.1) * 0.45
 	for k in sim.cracking:
 		if sim.collapsed.has(k): continue
 		var bits: PackedStringArray = k.split(",")
-		var rect := cell_rect(int(bits[0]), int(bits[1]))
-		draw_rect(rect, Color(0.35, 0.16, 0.12, 0.1 + pulse * 0.12))
-		draw_rect(rect.grow(-3), Color(ALARM, 0.45 + pulse * 0.35), false, 2.0)
+		_blit("tile_cracking", Vector2(t.origin.x + int(bits[0]) * t.cell,
+			t.origin.y + int(bits[1]) * t.cell), Color(1, 1, 1, 0.45 + pulse * 0.55))
 
 func _draw_rubble() -> void:
 	for k in sim.buried:
 		var bits: PackedStringArray = k.split(",")
-		var rect := cell_rect(int(bits[0]), int(bits[1]))
-		draw_rect(rect, Color(0.06, 0.05, 0.08, 0.86))
+		var at := Vector2(t.origin.x + int(bits[0]) * t.cell,
+			t.origin.y + int(bits[1]) * t.cell)
+		_blit("tile_rubble", at)
 		var left: float = float(sim.buried[k]) / t.rubble_life
-		draw_rect(Rect2(rect.position.x + 8, rect.end.y - 9,
-			(t.cell - 16) * clampf(left, 0.0, 1.0), 2.5), Color(GOLD, 0.5))
+		draw_rect(Rect2(at.x + 8, at.y + t.cell - 9,
+			(t.cell - 16) * clampf(left, 0.0, 1.0), 3), Color(GOLD, 0.6))
 
 func _draw_column_warning() -> void:
 	if sim.call_lane < 0 or sim.call_t <= 0.0: return
@@ -148,116 +150,85 @@ func _draw_column_warning() -> void:
 
 func _draw_caravan() -> void:
 	draw_rect(Rect2(0, t.origin.y, t.origin.x, t.rows * t.cell), Color("#1b1720"))
-	var base := size.y - 14
-	for i in range(24):
-		var a := fmod(i * 2.399, 1.0)
-		var b := fmod(i * 4.771, 1.0)
-		draw_circle(Vector2(8 + a * 78, base - 10 - b * 70), 5.0, GOLD)
+	var hoard: Texture2D = tex.get("prop_hoard")
+	if hoard != null:
+		var h := hoard.get_size() * SCALE
+		_blit("prop_hoard", Vector2(-h.x * 0.28, size.y - h.y - 6))
 
 # ---------------------------------------------------------------- bodies
 
-func _tint_of(parts: Array) -> Color:
-	# The body takes the colour of whatever it has most of, so a fused crew still reads
-	# as "mostly wall" or "mostly shooter" at a glance.
+## The part a body has most of decides which sprite it wears, so a fused crew still
+## reads as "mostly wall" or "mostly shooter" at a glance. The rest of the mixture is
+## shown as pips under it rather than by blending sprites, which at this size would just
+## make mud.
+func _dominant(parts: Array) -> String:
 	var best := ""
 	var best_n := 0
 	for p in parts:
 		var n := Fusion.count_of(parts, p)
-		if n > best_n: best_n = n; best = p
-	return Game.units[best].tint if best != "" else GOBLIN
+		if n > best_n:
+			best_n = n
+			best = p
+	return best
 
 func _draw_goblin(g: Goblin) -> void:
-	var rect := cell_rect(g.col, g.row)
-	var mid := rect.position + Vector2(t.cell * 0.5, t.cell * 0.55)
-	var tint := _tint_of(g.parts)
-	if g.entombed: tint = tint.darkened(0.55)
+	var at := Vector2(t.origin.x + g.col * t.cell, t.origin.y + g.row * t.cell)
+	var mid := at + Vector2(t.cell * 0.5, t.cell * 0.55)
+	var tone := Color.WHITE
+	if g.entombed: tone = Color(0.45, 0.42, 0.5)
+	elif g.hurt > 0.0: tone = Color(2.2, 2.2, 2.2)
+	_blit("goblin_%s" % _dominant(g.parts), at, tone)
 
-	draw_circle(mid + Vector2(0, 18), 15.0, Color(0, 0, 0, 0.34))
-	# One goblin drawn per part, so a three-part body is visibly three of them.
-	var n := g.parts.size()
-	for i in range(n):
-		var off := Vector2((i - (n - 1) * 0.5) * 13.0, -i * 4.0)
-		var c: Color = Game.units[g.parts[i]].tint
-		if g.hurt > 0.0: c = Color("#fff3cf")
-		draw_circle(mid + off, 17.0, c)
-		draw_circle(mid + off + Vector2(-5, -3), 3.0, Color("#1a1520"))
-		draw_circle(mid + off + Vector2(5, -3), 3.0, Color("#1a1520"))
+	# one pip per part, so a three-part body is visibly three of them
+	if g.parts.size() > 1:
+		var n := g.parts.size()
+		for i in range(n):
+			var px := mid.x + (i - (n - 1) * 0.5) * 9.0
+			draw_rect(Rect2(px - 3, at.y + 4, 6, 6), Color.BLACK)
+			draw_rect(Rect2(px - 2, at.y + 5, 4, 4), Game.units[g.parts[i]].tint)
 
 	var mx := g.max_hp(t, Game.units)
 	if g.hp < mx:
 		var frac := clampf(g.hp / mx, 0.0, 1.0)
-		draw_rect(Rect2(mid.x - 20, rect.end.y - 12, 40, 4), Color(0, 0, 0, 0.55))
-		draw_rect(Rect2(mid.x - 20, rect.end.y - 12, 40 * frac, 4),
+		draw_rect(Rect2(mid.x - 21, at.y + t.cell - 11, 42, 5), Color(0, 0, 0, 0.7))
+		draw_rect(Rect2(mid.x - 20, at.y + t.cell - 10, 40 * frac, 3),
 			ALARM if frac < 0.35 else GOBLIN)
 	if selected == g:
-		draw_rect(rect.grow(-3), Color(GOLD, 0.75), false, 2.0)
-	# A body that has room for what you are holding says so.
+		draw_rect(Rect2(at, Vector2(t.cell, t.cell)).grow(-3), Color(GOLD, 0.85), false, 3.0)
 	elif held_unit != "" and g.parts.size() < t.max_parts:
-		draw_arc(mid, t.cell * 0.42, 0, TAU, 24, Color(GOLD, 0.35), 1.6)
+		# a body with room for what you are holding says so
+		draw_arc(mid, t.cell * 0.42, 0, TAU, 20, Color(GOLD, 0.4), 2.0)
 
-## A goblin on the road. Same body, off its cell, with a health bar — the point of the
+## A goblin on the road. Same sprite, off its cell, with a health bar — the point of the
 ## march is that you can watch it not make it.
 func _draw_walker(w: Dictionary) -> void:
 	var p: Vector2 = w["pos"]
-	var hop := absf(sin(w["step"])) * 5.0
-	draw_circle(p + Vector2(0, 16), 14.0, Color(0, 0, 0, 0.34))
-	var c := _tint_of(w["parts"])
-	if w["hurt"] > 0.0: c = Color("#fff3cf")
-	draw_circle(p - Vector2(0, hop), 16.0, c)
-	draw_arc(p - Vector2(0, hop), 17.5, 0, TAU, 20, Color(GOLD, 0.85), 2.0)
+	var hop := absf(sin(w["step"])) * 4.0
+	var at := p - Vector2(t.cell * 0.5, t.cell * 0.55 + hop)
+	_blit("goblin_%s" % _dominant(w["parts"]), at,
+		Color(2.2, 2.2, 2.2) if w["hurt"] > 0.0 else Color.WHITE)
 	var frac: float = clampf(w["hp"] / maxf(1.0, w["max_hp"]), 0.0, 1.0)
-	if frac < 1.0:
-		draw_rect(Rect2(p.x - 16, p.y + 22, 32, 3.5), Color(0, 0, 0, 0.55))
-		draw_rect(Rect2(p.x - 16, p.y + 22, 32 * frac, 3.5),
-			ALARM if frac < 0.35 else GOBLIN)
+	draw_rect(Rect2(p.x - 21, p.y + 18, 42, 5), Color(0, 0, 0, 0.7))
+	draw_rect(Rect2(p.x - 20, p.y + 19, 40 * frac, 3), ALARM if frac < 0.35 else GOBLIN)
 
-## Heroes are told apart by outline, not colour — a cone and a bucket read in
-## silhouette. Measured as pairwise overlap, they were the same blob at different scales
-## before each got a shape of its own.
 func _draw_foe(f: Foe) -> void:
 	var d: FoeDef = Game.foes[f.kind]
-	var y := t.origin.y + f.lane_f * t.cell + t.cell * 0.56
-	var pos := Vector2(f.x, y + sin(f.bob) * 2.0)
-	var scale := 1.75 if d.boss else (0.9 if f.kind == "scout"
-		else (1.16 if f.kind == "sergeant" else (0.8 if f.kind == "runner" else 1.0)))
-	var body := Color("#8f4634") if d.boss else (
-		Color("#8d8496") if f.kind == "scout" else (
-		Color("#b98a4e") if f.kind == "sergeant" else (
-		Color("#d8c9a0") if f.kind == "runner" else Color("#c9ced8"))))
-	if f.hit_flash > 0.0: body = Color("#fff3cf")
-
-	draw_circle(Vector2(f.x, y + 30 * scale), 13.0 * scale, Color(0, 0, 0, 0.3))
-	var bw := 0.72 if f.kind == "scout" else (0.76 if f.kind == "runner" else 1.0)
-	var torso := PackedVector2Array([
-		pos + Vector2(-13 * bw, 26) * scale, pos + Vector2(-9 * bw, -8) * scale,
-		pos + Vector2(9 * bw, -8) * scale, pos + Vector2(13 * bw, 26) * scale])
-	draw_colored_polygon(torso, body)
-	draw_circle(pos + Vector2(0, -14) * scale, 12.0 * scale, body)
-
-	match f.kind:
-		"squire":                                     # a round shield on the near arm
-			draw_circle(pos + Vector2(-16, 8) * scale, 11.0 * scale, Color("#6d6a76"))
-		"scout":                                      # a plume twice the head's height
-			draw_line(pos + Vector2(-1, -22) * scale, pos + Vector2(20, -44) * scale,
-				Color("#d1553f"), 4.0 * scale)
-		"sergeant":                                   # pauldrons flatten the top
-			draw_rect(Rect2(pos + Vector2(-21, -9) * scale,
-				Vector2(42, 10) * scale), Color("#8a6234"))
-		"runner":                                     # bare head, hair streaming back
-			draw_colored_polygon(PackedVector2Array([
-				pos + Vector2(6, -22) * scale, pos + Vector2(26, -15) * scale,
-				pos + Vector2(24, -7) * scale, pos + Vector2(6, -10) * scale]),
-				Color("#8a7a55"))
-
-	if f.slow_for > 0.0:
-		draw_circle(Vector2(f.x, y + t.cell * 0.28), 6.0, Color("#9a7fc4"))
+	var y := t.origin.y + f.lane_f * t.cell
+	var bob := sin(f.bob) * 2.0
+	var art_name := "hero_%s" % f.kind
+	var tx: Texture2D = tex.get(art_name)
+	var w: float = (tx.get_width() * SCALE) if tx != null else t.cell
+	var at := Vector2(f.x - w * 0.5, y + t.cell - (tx.get_height() * SCALE if tx else t.cell) - 4 + bob)
+	var tone := Color(2.2, 2.2, 2.2) if f.hit_flash > 0.0 else Color.WHITE
+	if f.slow_for > 0.0: tone = Color(0.72, 0.66, 0.86)
+	_blit(art_name, at, tone)
 	if f.stun_for > 0.0:
-		draw_circle(Vector2(f.x, y - 34 * scale), 4.0, GOLD)
+		draw_circle(Vector2(f.x, at.y - 6), 4.0, GOLD)
 	var frac := clampf(f.hp / f.max_hp, 0.0, 1.0)
 	if frac < 1.0:
-		var w := 32.0 * (2.0 if d.boss else 1.0)
-		draw_rect(Rect2(f.x - w * 0.5, y + 32 * scale, w, 3.5), Color(0, 0, 0, 0.55))
-		draw_rect(Rect2(f.x - w * 0.5, y + 32 * scale, w * frac, 3.5), ALARM)
+		var bw := 34.0 * (2.0 if d.boss else 1.0)
+		draw_rect(Rect2(f.x - bw * 0.5, y + t.cell - 6, bw, 5), Color(0, 0, 0, 0.7))
+		draw_rect(Rect2(f.x - bw * 0.5 + 1, y + t.cell - 5, (bw - 2) * frac, 3), ALARM)
 
 func _draw_hint() -> void:
 	if sim.call_lane >= 0 and sim.call_t > 0.0:

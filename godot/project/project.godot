@@ -28,4 +28,16 @@ window/handheld/orientation=1
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+; 0 = nearest. The single most important setting for pixel art — without it every
+; sprite is bilinear-filtered into mush the moment it is drawn at anything but 1:1.
 textures/canvas_textures/default_texture_filter=0
+
+[importer_defaults]
+
+texture={
+"compress/mode": 0,
+"detect_3d/compress_to": 0,
+"mipmaps/generate": false,
+"process/fix_alpha_border": false,
+"roughness/mode": 0
+}

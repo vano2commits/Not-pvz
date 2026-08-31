@@ -85,6 +85,19 @@ for (const [f, info] of perFile) {
       if (new RegExp(pat).test(code)) add(f, i, `Godot 3 API — use ${fix}`);
     }
     // a `func` line that is followed by a line at the same or lower indent
+    // locals that shadow a Node/CanvasItem property — a warning in Godot 4, and a
+    // genuine source of confusion when the shadowed one is what you meant
+    const SHADOW = ['name','size','position','scale','rotation','owner','script',
+                    'modulate','visible','material','texture','theme'];
+    let sm;
+    if ((sm = code.match(/^\s*var\s+(\w+)\s*[:=]/)) && SHADOW.includes(sm[1]))
+      add(f, i, `local "${sm[1]}" shadows a built-in property`);
+    if ((sm = code.match(/^\s*(?:static\s+)?func\s+\w+\(([^)]*)\)/))) {
+      for (const arg of sm[1].split(',')) {
+        const nm = arg.trim().split(/[\s:=]/)[0];
+        if (SHADOW.includes(nm)) add(f, i, `parameter "${nm}" shadows a built-in property`);
+      }
+    }
     if (/^\s*(static\s+)?func\s+\w+.*:\s*$/.test(l)) {
       const ind = (l.match(/^\t*/) || [''])[0].length;
       const next = lines.slice(i + 1).find(x => x.trim() && !x.trim().startsWith('#'));
